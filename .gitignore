@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+dist
+dist-ssr
+*.local
+
+# server runtime data + uploaded files (incl. ingest channel folders)
+server/data/
+samples/processed/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.vite

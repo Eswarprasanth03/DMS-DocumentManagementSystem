@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Inline preview of injected HTML (spreadsheets via SheetJS, Word via mammoth) */
+.fs-doc-preview table {
+  border-collapse: collapse;
+  width: max-content;
+  font-size: 12px;
+}
+.fs-doc-preview td,
+.fs-doc-preview th {
+  border: 1px solid #e5e7eb;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.fs-doc-preview tr:first-child td {
+  background: #f8fafc;
+  font-weight: 600;
+}
+.fs-doc-preview h1 { font-size: 1.5rem; font-weight: 700; margin: 0.6em 0; }
+.fs-doc-preview h2 { font-size: 1.25rem; font-weight: 700; margin: 0.6em 0; }
+.fs-doc-preview h3 { font-size: 1.1rem; font-weight: 600; margin: 0.5em 0; }
+.fs-doc-preview p { margin: 0.5em 0; line-height: 1.5; }
+.fs-doc-preview ul,
+.fs-doc-preview ol { margin: 0.5em 0 0.5em 1.25em; list-style: revert; }
+.fs-doc-preview a { color: #4f46e5; text-decoration: underline; }
+
+/* Thin, calm scrollbars to match the enterprise theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

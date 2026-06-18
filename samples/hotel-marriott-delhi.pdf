@@ -1,0 +1,51 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 343 >>
+stream
+BT
+/F1 18 Tf
+72 740 Td
+(Marriott - Hotel Bill) Tj
+/F1 12 Tf
+1 0 0 1 72 710 Tm
+(Vendor: Marriott) Tj
+1 0 0 1 72 688 Tm
+(Client: Initech) Tj
+1 0 0 1 72 666 Tm
+(City: Delhi) Tj
+1 0 0 1 72 644 Tm
+(Amount INR 22400) Tj
+1 0 0 1 72 622 Tm
+(Date 2026-06-21) Tj
+1 0 0 1 72 600 Tm
+(GSTIN 07AAACM5544K1Z8) Tj
+1 0 0 1 72 578 Tm
+(hotel stay 2 nights) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000635 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+705
+%%EOF
