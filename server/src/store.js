@@ -9,7 +9,7 @@ import * as mongo from './mongo.js'
 // Reads are always synchronous against the in-memory copy; mongo writes are
 // applied through a background queue so the existing synchronous API is intact.
 
-const COLLECTIONS = ['users', 'folders', 'documents', 'versions', 'trips', 'bonds', 'audit', 'envelopes']
+const COLLECTIONS = ['users', 'folders', 'documents', 'versions', 'trips', 'bonds', 'audit', 'envelopes', 'notifications']
 
 const EMPTY = {
   users: [],
@@ -20,6 +20,7 @@ const EMPTY = {
   bonds: [],
   audit: [],
   envelopes: [],
+  notifications: [],
   meta: { seeded: false },
 }
 

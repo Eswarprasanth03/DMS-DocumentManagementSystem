@@ -21,6 +21,7 @@ const TYPE_RULES = [
   { type: 'Invoice', category: 'Invoices', retention: '8yr', keywords: ['invoice', 'inv', 'bill to', 'invoice no'] },
   { type: 'Receipt', category: 'Receipts', retention: '3yr', keywords: ['receipt', 'rcpt', 'paid', 'received'] },
   { type: 'Purchase Order', category: 'Purchase Orders', retention: '5yr', keywords: ['purchase order', 'po number', 'po no'] },
+  { type: 'Goods Receipt', category: 'Goods Receipts', retention: '8yr', keywords: ['goods receipt', 'grn', 'gr no', 'received goods', 'delivery note', 'delivery challan', 'goods received note'] },
   { type: 'Bank Statement', category: 'Bank', retention: '8yr', keywords: ['bank', 'statement', 'stmt', 'account number', 'closing balance', 'ifsc'] },
   { type: 'GST Return', category: 'Tax', retention: '8yr', keywords: ['gstr', 'gst return', 'return period'] },
   // Legal
@@ -45,6 +46,7 @@ const REQUIRED_FIELDS = {
   'Hotel Invoice': ['vendorName', 'totalAmount', 'invoiceDate'],
   'Fuel Bill': ['merchant', 'amount', 'date'],
   'Purchase Order': ['vendorName', 'totalAmount'],
+  'Goods Receipt': ['vendorName', 'date'],
   'Bank Statement': ['bankName'],
   'GST Return': ['gstin'],
   Contract: ['parties'],
@@ -194,7 +196,7 @@ const CATEGORY_DEPARTMENT = {
   Taxi: 'Finance', Hotel: 'Finance', Meals: 'Finance', Travel: 'Finance',
   Fuel: 'Finance', Invoices: 'Finance', Receipts: 'Finance', Bank: 'Finance',
   Tax: 'Finance', Contracts: 'Legal', 'Purchase Orders': 'Procurement',
-  HR: 'HR', Compliance: 'Compliance', Misc: 'General',
+  'Goods Receipts': 'Procurement', HR: 'HR', Compliance: 'Compliance', Misc: 'General',
 }
 export function departmentFor(category) {
   return CATEGORY_DEPARTMENT[category] || 'General'

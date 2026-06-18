@@ -9,12 +9,13 @@ import {
 import { audit, ipOf, verifyChain } from './audit.js'
 import {
   folderPath, retentionStatus, runRetentionSweep,
-  detectTrips, RETENTION_YEARS, folderAllowsRole, visibleFolderTree,
+  detectTrips, RETENTION_YEARS, folderAllowsRole, visibleFolderTree, TYPE_RULES,
 } from './pipeline.js'
 import { ingestBuffer } from './ingest.js'
 import { channelStatus } from './watchers.js'
 import { mimeForName } from './mime.js'
 import { embedQuery, embedPassages, cosine as embCosine, embeddingModel } from './embeddings.js'
+import { notify } from './notify.js'
 
 const router = express.Router()
 
@@ -41,6 +42,17 @@ function snapshotOf(doc) {
   const snap = {}
   for (const k of EDITABLE) snap[k] = doc[k]
   return snap
+}
+
+// Correction naming: {document_type}_{vendor}_{invoice_number}_{date}.{ext}
+// — unknown/empty segments become 'unknown'.
+function correctionName(doc) {
+  const slug = (s) => {
+    const v = String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    return v || 'unknown'
+  }
+  const ext = (doc.name || '').includes('.') ? doc.name.toLowerCase().split('.').pop() : 'pdf'
+  return `${slug(doc.type)}_${slug(doc.vendor)}_${slug(doc.invoiceNumber)}_${slug(doc.date)}.${ext}`
 }
 
 
@@ -131,6 +143,34 @@ router.get('/documents/review-queue', authRequired, requirePerm('review'), (req,
   res.json({ documents: items.map(serializeDoc), count: items.length })
 })
 
+// Possible duplicates: pairs of (duplicate, original it matched).
+// (Defined before '/documents/:id' so the literal path isn't captured as an id.)
+router.get('/documents/duplicates', authRequired, requirePerm('upload'), (req, res) => {
+  const pairs = store.all('documents')
+    .filter((d) => d.duplicate && !d.tombstone && folderAllowsRole(d.folderId, req.user.role))
+    .map((d) => {
+      const original = d.duplicateOf ? store.findById('documents', d.duplicateOf) : null
+      return {
+        duplicate: serializeDoc(d),
+        original: original && !original.tombstone ? serializeDoc(original) : null,
+        diff: original ? diffFields(d, original) : [],
+      }
+    })
+  res.json({ pairs, count: pairs.length })
+})
+
+// Trash — soft-deleted documents still within the recovery window.
+router.get('/documents/trash', authRequired, requirePerm('upload'), (req, res) => {
+  const items = store.all('documents')
+    .filter((d) => d.deletedAt && folderAllowsRole(d.folderId, req.user.role))
+    .sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt))
+    .map((d) => {
+      const ageDays = Math.floor((Date.now() - new Date(d.deletedAt)) / 86400000)
+      return { ...serializeDoc(d), deletedAt: d.deletedAt, deletedBy: d.deletedBy, deleteReason: d.deleteReason, daysLeft: Math.max(0, 30 - ageDays) }
+    })
+  res.json({ items, count: items.length })
+})
+
 router.get('/documents/:id', authRequired, requirePerm('browse'), (req, res) => {
   const doc = store.findById('documents', req.params.id)
   if (!doc) return res.status(404).json({ error: 'Document not found' })
@@ -216,6 +256,162 @@ router.patch('/documents/:id/reject', authRequired, requirePerm('review'), (req,
   res.json({ document: serializeDoc(updated) })
 })
 
+// FEATURE 1 — Admin metadata correction for failed/incomplete classifications.
+// Applies corrected fields, renames the file per convention, marks the document
+// "Manually Verified", and records before/after in the audit trail.
+const CORRECTABLE = ['type', 'vendor', 'client', 'invoiceNumber', 'date', 'amount', 'currency', 'department', 'category', 'retention', 'tags']
+router.patch('/documents/:id/correct', authRequired, requirePerm('review'), (req, res) => {
+  const doc = store.findById('documents', req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+
+  const body = req.body || {}
+  const before = {}
+  const patch = {}
+  for (const key of CORRECTABLE) {
+    if (key in body) { before[key] = doc[key] ?? null; patch[key] = body[key] }
+  }
+  // Keep the structured fields map in sync with the corrected flat values.
+  const fields = { ...(doc.fields || {}) }
+  const fieldMap = { vendor: 'vendorName', client: 'client', invoiceNumber: 'invoiceNumber', date: 'invoiceDate', amount: 'totalAmount' }
+  for (const [flat, fk] of Object.entries(fieldMap)) {
+    if (flat in body && body[flat] != null && body[flat] !== '') {
+      fields[fk] = { value: body[flat], confidence: 1, source: 'manual' }
+    }
+  }
+  patch.fields = fields
+  patch.custom = body.custom && typeof body.custom === 'object' ? body.custom : (doc.custom || {})
+
+  const merged = { ...doc, ...patch }
+  patch.name = correctionName(merged) // rename per convention with corrected values
+  patch.mimeType = mimeForName(patch.name)
+  patch.status = 'Filed'
+  patch.reviewReason = null
+  patch.documentConfidence = 1
+  patch.manuallyVerified = { by: req.user.name, userId: req.user.id, at: nowIso() }
+  const newVersion = (doc.version || 1) + 1
+  patch.version = newVersion
+
+  const updated = store.update('documents', doc.id, patch)
+  store.all('versions', (v) => v.docId === doc.id).forEach((v) => store.update('versions', v.id, { current: false }))
+  store.insert('versions', { docId: doc.id, v: newVersion, author: req.user.name, note: 'Manually verified (corrected)', current: true, ts: nowIso(), snapshot: snapshotOf(updated) })
+  audit({ user: req.user, action: 'edit', doc: updated.name, docId: doc.id, detail: `Manually verified${Object.keys(before).length ? ` — corrected ${Object.keys(before).join(', ')}` : ''}; renamed → ${updated.name}`, before, after: patch, ip: ipOf(req) })
+  res.json({ document: serializeDoc(updated) })
+})
+
+// ===========================================================================
+// FEATURE 2 — Duplicate detection & admin management
+// ===========================================================================
+function diffFields(a, b) {
+  const keys = ['type', 'vendor', 'client', 'invoiceNumber', 'date', 'amount', 'currency', 'gstin', 'department']
+  return keys.filter((k) => (a[k] ?? null) !== (b[k] ?? null))
+}
+
+// Dismiss a duplicate flag (documents are legitimately different).
+router.post('/documents/:id/dismiss-duplicate', authRequired, requirePerm('upload'), (req, res) => {
+  const doc = store.findById('documents', req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+  const updated = store.update('documents', doc.id, {
+    duplicate: false, duplicateOf: null, status: doc.status === 'Duplicate' ? 'Filed' : doc.status,
+  })
+  audit({ user: req.user, action: 'edit', doc: doc.name, docId: doc.id, detail: 'Dismissed duplicate flag (legitimately different)', ip: ipOf(req) })
+  res.json({ document: serializeDoc(updated) })
+})
+
+// Merge metadata from a source duplicate into a retained target, then soft-delete source.
+router.post('/documents/:id/merge', authRequired, requirePerm('upload'), (req, res) => {
+  const target = store.findById('documents', req.params.id)
+  const source = store.findById('documents', req.body?.sourceId)
+  if (!target || !source) return res.status(404).json({ error: 'Document(s) not found' })
+  // Fill any empty/Unknown target fields from the source (more complete wins).
+  const patch = {}
+  const before = {}
+  const isEmpty = (v) => v == null || v === '' || v === 'Unknown'
+  for (const k of ['vendor', 'client', 'invoiceNumber', 'date', 'amount', 'currency', 'gstin', 'department']) {
+    if (isEmpty(target[k]) && !isEmpty(source[k])) { before[k] = target[k] ?? null; patch[k] = source[k] }
+  }
+  let updated = target
+  if (Object.keys(patch).length) {
+    const newVersion = (target.version || 1) + 1
+    patch.version = newVersion
+    updated = store.update('documents', target.id, patch)
+    store.all('versions', (v) => v.docId === target.id).forEach((v) => store.update('versions', v.id, { current: false }))
+    store.insert('versions', { docId: target.id, v: newVersion, author: req.user.name, note: 'Merged metadata from duplicate', current: true, ts: nowIso(), snapshot: snapshotOf(updated) })
+  }
+  // Soft-delete the source as a duplicate, retaining the target.
+  store.update('documents', source.id, { status: 'Deleted', tombstone: true, deletedAt: nowIso(), deletedBy: req.user.name, deleteReason: 'Duplicate', retainedId: target.id })
+  audit({ user: req.user, action: 'edit', doc: target.name, docId: target.id, detail: `Merged metadata from duplicate ${source.name} (${Object.keys(patch).filter((k) => k !== 'version').join(', ') || 'no gaps'})`, before, after: patch, ip: ipOf(req) })
+  audit({ user: req.user, action: 'delete', doc: source.name, docId: source.id, detail: `Soft-deleted as duplicate; retained ${target.name}`, ip: ipOf(req) })
+  if (source.uploadedBy) notify({ to: source.uploadedBy, tone: 'warning', title: 'Your document was merged as a duplicate', detail: `${source.name} → kept ${target.name}`, docId: target.id })
+  res.json({ document: serializeDoc(updated) })
+})
+
+// Soft delete (30-day recovery) with a required reason; notifies the uploader.
+const DELETE_REASONS = ['Duplicate', 'Incorrect Upload', 'Other']
+router.post('/documents/:id/soft-delete', authRequired, requirePerm('upload'), (req, res) => {
+  const doc = store.findById('documents', req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+  if (doc.bonded && req.user.role !== 'Admin') return res.status(409).json({ error: 'Bonded document — admin required', requires: '2-admin' })
+  const reason = (req.body?.reason || '').trim()
+  if (!DELETE_REASONS.includes(reason)) return res.status(400).json({ error: `reason required (one of: ${DELETE_REASONS.join(', ')})` })
+  const retainedId = req.body?.retainedId || null
+  store.update('documents', doc.id, { status: 'Deleted', tombstone: true, deletedAt: nowIso(), deletedBy: req.user.name, deleteReason: reason, retainedId })
+  const retained = retainedId ? store.findById('documents', retainedId) : null
+  audit({ user: req.user, action: 'delete', doc: doc.name, docId: doc.id, detail: `Soft-deleted (${reason})${retained ? `; retained ${retained.name}` : ''}`, ip: ipOf(req) })
+  if (doc.uploadedBy && doc.uploadedBy !== req.user.name) {
+    notify({ to: doc.uploadedBy, tone: 'warning', title: 'A document you uploaded was deleted', detail: `${doc.name} — reason: ${reason}`, docId: doc.id })
+  }
+  res.json({ ok: true, recoveryDays: 30 })
+})
+
+// Restore a soft-deleted document.
+router.post('/documents/:id/restore', authRequired, requirePerm('upload'), (req, res) => {
+  const doc = store.findById('documents', req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+  const updated = store.update('documents', doc.id, { status: 'Filed', tombstone: false, deletedAt: null, deletedBy: null, deleteReason: null, retainedId: null })
+  audit({ user: req.user, action: 'edit', doc: doc.name, docId: doc.id, detail: 'Restored from trash', ip: ipOf(req) })
+  res.json({ document: serializeDoc(updated) })
+})
+
+// Hard delete (permanent purge) — requires typed confirmation.
+router.delete('/documents/:id/purge', authRequired, requirePerm('upload'), async (req, res, next) => {
+  try {
+    const doc = store.findById('documents', req.params.id)
+    if (!doc) return res.status(404).json({ error: 'Document not found' })
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only an Admin can permanently delete' })
+    if ((req.body?.confirm || '') !== 'PERMANENTLY DELETE') {
+      return res.status(400).json({ error: 'Type "PERMANENTLY DELETE" to confirm', requires: 'confirmation' })
+    }
+    if (doc.storageKey) { try { await storage.deleteFile(doc.storageKey) } catch { /* ignore */ } }
+    store.all('versions', (v) => v.docId === doc.id).forEach((v) => store.remove('versions', v.id))
+    store.remove('documents', doc.id)
+    audit({ user: req.user, action: 'delete', doc: doc.name, docId: doc.id, detail: 'PERMANENTLY purged (hard delete)', ip: ipOf(req) })
+    res.json({ ok: true, purged: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ===========================================================================
+// NOTIFICATIONS
+// ===========================================================================
+router.get('/notifications', authRequired, (req, res) => {
+  const mine = store.all('notifications')
+    .filter((n) => n.to === req.user.name || n.to === req.user.email)
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    .slice(0, 50)
+  res.json({ notifications: mine, unread: mine.filter((n) => !n.read).length })
+})
+router.patch('/notifications/:id/read', authRequired, (req, res) => {
+  const n = store.findById('notifications', req.params.id)
+  if (!n) return res.status(404).json({ error: 'Not found' })
+  res.json({ notification: store.update('notifications', n.id, { read: true }) })
+})
+router.post('/notifications/read-all', authRequired, (req, res) => {
+  store.all('notifications').filter((n) => (n.to === req.user.name || n.to === req.user.email) && !n.read)
+    .forEach((n) => store.update('notifications', n.id, { read: true }))
+  res.json({ ok: true })
+})
+
 // Download original file (if present). Reads from GridFS or the filesystem.
 router.get('/documents/:id/file', authRequired, requirePerm('browse'), async (req, res, next) => {
   try {
@@ -267,8 +463,13 @@ router.patch('/documents/:id', authRequired, requirePerm('upload'), (req, res) =
   if (!doc) return res.status(404).json({ error: 'Document not found' })
   const patch = {}
   const before = {}
-  for (const key of ['type', 'vendor', 'amount', 'date', 'client', 'category', 'retention', 'tags', 'status']) {
-    if (key in req.body) { before[key] = doc[key]; patch[key] = req.body[key] }
+  for (const key of ['type', 'vendor', 'amount', 'date', 'client', 'invoiceNumber', 'currency', 'department', 'gstin', 'category', 'retention', 'tags', 'status']) {
+    if (key in req.body) { before[key] = doc[key] ?? null; patch[key] = req.body[key] }
+  }
+  // Keep category/retention consistent if the type changed (unless explicitly set).
+  if ('type' in patch && !('category' in patch)) {
+    const rule = TYPE_RULES.find((r) => r.type === patch.type)
+    if (rule) { patch.category = rule.category; patch.retention = patch.retention || rule.retention }
   }
   const newVersion = (doc.version || 1) + 1
   patch.version = newVersion
@@ -330,10 +531,14 @@ router.delete('/documents/:id', authRequired, requirePerm('upload'), (req, res) 
       return res.status(409).json({ error: 'Bonded document requires two-admin approval to delete', requires: '2-admin' })
     }
   }
-  // Soft delete -> tombstone
-  store.update('documents', doc.id, { status: 'Deleted', tombstone: true })
-  audit({ user: req.user, action: 'delete', doc: doc.name, docId: doc.id, detail: 'Soft delete → tombstone', ip: ipOf(req) })
-  res.json({ ok: true })
+  // Soft delete -> tombstone (30-day recovery window)
+  const reason = (req.body?.reason) || 'Other'
+  store.update('documents', doc.id, { status: 'Deleted', tombstone: true, deletedAt: nowIso(), deletedBy: req.user.name, deleteReason: reason })
+  audit({ user: req.user, action: 'delete', doc: doc.name, docId: doc.id, detail: `Soft delete (${reason})`, ip: ipOf(req) })
+  if (doc.uploadedBy && doc.uploadedBy !== req.user.name) {
+    notify({ to: doc.uploadedBy, tone: 'warning', title: 'A document you uploaded was deleted', detail: `${doc.name} — reason: ${reason}`, docId: doc.id })
+  }
+  res.json({ ok: true, recoveryDays: 30 })
 })
 
 // ===========================================================================

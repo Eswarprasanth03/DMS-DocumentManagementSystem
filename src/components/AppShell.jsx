@@ -8,6 +8,7 @@ import {
   IconBolt, IconDashboard, IconUpload, IconFolder, IconSearch, IconMap,
   IconClock, IconLock, IconHistory, IconShield, IconBell, IconHelp,
   IconSettings, IconLogout, IconDocCheck, IconSignature, IconChevronDown,
+  IconCopy, IconTrash,
 } from './icons.jsx'
 
 // RBAC-driven navigation. Sections show/hide by permission, so the chrome is
@@ -27,6 +28,8 @@ const NAV = [
     items: [
       { to: '/trips', label: 'Trip Detection', icon: IconMap, perm: 'trips' },
       { to: '/review', label: 'Doc Review', icon: IconDocCheck, perm: 'upload' },
+      { to: '/duplicates', label: 'Duplicates', icon: IconCopy, perm: 'upload' },
+      { to: '/trash', label: 'Trash', icon: IconTrash, perm: 'upload' },
     ],
   },
   {
@@ -98,7 +101,7 @@ function Sidebar({ can }) {
   )
 }
 
-function NotificationMenu({ open, onClose, notifications }) {
+function NotificationMenu({ open, onClose, notifications, unread, onMarkAll }) {
   if (!open) return null
   return (
     <>
@@ -106,7 +109,11 @@ function NotificationMenu({ open, onClose, notifications }) {
       <div className="absolute right-0 mt-2 w-80 z-40 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-900">Notifications</span>
-          <Badge tone={notifications.length ? 'error' : 'neutral'}>{notifications.length} new</Badge>
+          {unread > 0 ? (
+            <button onClick={onMarkAll} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">Mark all read</button>
+          ) : (
+            <Badge tone="neutral">{notifications.length}</Badge>
+          )}
         </div>
         {notifications.length === 0 && (
           <div className="px-4 py-6 text-center text-xs text-gray-400">You're all caught up.</div>
@@ -121,9 +128,9 @@ function NotificationMenu({ open, onClose, notifications }) {
                   }`}
                 />
                 <div>
-                  <div className="text-sm font-medium text-gray-800">{n.title}</div>
+                  <div className={`text-sm ${n.read ? 'text-gray-700' : 'font-semibold text-gray-900'}`}>{n.title}</div>
                   <div className="text-xs text-gray-500">{n.detail}</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{n.ts}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{n.ts && n.ts.includes('T') ? new Date(n.ts).toLocaleString() : n.ts}</div>
                 </div>
               </div>
             </li>
@@ -171,17 +178,17 @@ function UserMenu({ user, onLogout }) {
   )
 }
 
-function buildNotifications(stats) {
+function buildStatsAlerts(stats) {
   if (!stats) return []
   const out = []
   if (stats.expiring || stats.expired)
-    out.push({ id: 'n-ret', tone: 'warning', title: `${stats.expiring + stats.expired} documents expiring/expired`, detail: 'Retention escalation', ts: 'live' })
+    out.push({ id: 'n-ret', tone: 'warning', title: `${stats.expiring + stats.expired} documents expiring/expired`, detail: 'Retention escalation', ts: 'live', read: true })
   if (stats.trips)
-    out.push({ id: 'n-trip', tone: 'info', title: `${stats.trips} trip(s) detected`, detail: 'taxi + hotel within 72h', ts: 'live' })
+    out.push({ id: 'n-trip', tone: 'info', title: `${stats.trips} trip(s) detected`, detail: 'taxi + hotel within 72h', ts: 'live', read: true })
   if (stats.duplicates)
-    out.push({ id: 'n-dup', tone: 'error', title: `${stats.duplicates} duplicate(s) flagged`, detail: 'vendor + amount + date match', ts: 'live' })
+    out.push({ id: 'n-dup', tone: 'error', title: `${stats.duplicates} duplicate(s) flagged`, detail: 'vendor + amount + date match', ts: 'live', read: true })
   if (stats.needsReview)
-    out.push({ id: 'n-rev', tone: 'warning', title: `${stats.needsReview} document(s) need review`, detail: 'confidence < 0.75', ts: 'live' })
+    out.push({ id: 'n-rev', tone: 'warning', title: `${stats.needsReview} document(s) need review`, detail: 'confidence < 0.75', ts: 'live', read: true })
   return out
 }
 
@@ -189,8 +196,13 @@ function Topbar({ user, onLogout }) {
   const [notifOpen, setNotifOpen] = useState(false)
   const [q, setQ] = useState('')
   const navigate = useNavigate()
-  const { data } = useApi(() => api.stats(), [])
-  const notifications = buildNotifications(data)
+  const { data: statsData } = useApi(() => api.stats(), [])
+  const { data: notifData, reload: reloadNotif } = useApi(() => api.notifications(), [])
+  const personal = notifData?.notifications || []
+  const unread = notifData?.unread || 0
+  // Personal (per-user) notifications first, then live operational alerts.
+  const notifications = [...personal, ...buildStatsAlerts(statsData)]
+  const markAllRead = async () => { try { await api.readAllNotifications(); reloadNotif() } catch { /* ignore */ } }
   return (
     <header className="sticky top-0 z-20 h-16 bg-white border-b border-gray-200 flex items-center gap-3 px-4 md:px-6">
       <div className="relative flex-1 max-w-md">
@@ -215,11 +227,11 @@ function Topbar({ user, onLogout }) {
             aria-label="Notifications"
           >
             <IconBell className="w-5 h-5" />
-            {notifications.length > 0 && (
+            {(unread > 0 || notifications.length > 0) && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
             )}
           </button>
-          <NotificationMenu open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+          <NotificationMenu open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} unread={unread} onMarkAll={markAllRead} />
         </div>
         <button
           className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition"

@@ -36,9 +36,16 @@ function toNum(v) {
 }
 
 function buildPrompt(text) {
-  return `You are a document intelligence engine for a Document Management System.
+  return `You are a document intelligence engine for an enterprise Document Management System.
 Read the document text and respond with ONLY a JSON object (no markdown, no prose):
 {
+  "isBusinessDocument": true ONLY if this is a genuine business / financial / legal / HR
+     document an enterprise would store (invoice, GST invoice, receipt, purchase order,
+     goods receipt/GRN, contract, MSA, NDA, bank statement, HR letter, compliance doc,
+     travel/hotel/fuel bill, etc.). false if it is NOT (a personal photo, selfie, meme,
+     screenshot, marketing flyer, blank/illegible page, random or unrelated content).
+  "rejectReason": if isBusinessDocument is false, a short reason (e.g. "Personal photo",
+     "Blank/illegible page", "Not a business document"); otherwise null,
   "type": one of [${TYPE_NAMES.join(', ')}],
   "typeConfidence": 0..1,
   "client": the company the document is addressed TO (or null),
@@ -113,31 +120,36 @@ function flatten(fields, base, clientVal) {
 }
 
 // Validate extraction → documentConfidence + reviewReason + requiresReview.
-function validate(type, fields, typeConfidence, gstin) {
+function validate(type, fields, typeConfidence, gstin, client) {
   const required = REQUIRED_FIELDS[type] || []
   const missing = required.filter((k) => !fields[k] || cleanVal(fields[k].value) == null)
   const present = Object.values(fields)
   const avgFieldConf = present.length ? present.reduce((s, f) => s + (f.confidence || 0), 0) / present.length : typeConfidence
   const gstinBad = gstin != null && !gstinValid(gstin)
+  // An unknown/blank client is a failed extraction — route to review so an admin
+  // can add the client name manually.
+  const clientMissing = !cleanVal(client)
 
   let score = 0.5 * typeConfidence + 0.5 * avgFieldConf
   score -= missing.length * 0.15
   if (gstinBad) score -= 0.2
+  if (clientMissing) score -= 0.15
   const documentConfidence = Number(Math.min(0.99, Math.max(0.05, score)).toFixed(2))
 
   const reasons = []
   if (missing.length) reasons.push(`Missing: ${missing.join(', ')}`)
+  if (clientMissing) reasons.push('Missing client name')
   if (gstinBad) reasons.push('Invalid GSTIN')
   if (documentConfidence < config.confidenceThreshold) reasons.push(`Low confidence (${documentConfidence})`)
-  const requiresReview = documentConfidence < config.confidenceThreshold || missing.length > 0 || gstinBad
+  const requiresReview = documentConfidence < config.confidenceThreshold || missing.length > 0 || gstinBad || clientMissing
 
-  return { documentConfidence, requiresReview, reviewReason: reasons.join(' · ') || null, missing, gstinBad }
+  return { documentConfidence, requiresReview, reviewReason: reasons.join(' · ') || null, missing, gstinBad, clientMissing }
 }
 
 function assemble(type, fields, typeConfidence, base, clientVal, engine) {
   const rule = TYPE_RULES.find((r) => r.type === type) || {}
   const flat = flatten(fields, base, clientVal)
-  const v = validate(type, fields, typeConfidence, flat.gstin)
+  const v = validate(type, fields, typeConfidence, flat.gstin, flat.client)
   return {
     type,
     category: rule.category || base.category,
@@ -177,7 +189,17 @@ export async function classifyDoc(input) {
     let fields = normalizeFields(llm.fields, engine)
     if (Object.keys(fields).length === 0) fields = fieldsFromBase(type, base) // LLM gave no fields
     const typeConfidence = Number(llm.typeConfidence) || base.confidence
-    return assemble(type, fields, typeConfidence, base, llm.client, engine)
+    const result = assemble(type, fields, typeConfidence, base, llm.client, engine)
+    // Business-document gate: quarantine anything that isn't a real company doc.
+    if (llm.isBusinessDocument === false) {
+      result.nonBusiness = true
+      result.status = 'Needs Review'
+      result.requiresReview = true
+      result.documentConfidence = Math.min(result.documentConfidence ?? 0.3, 0.25)
+      const why = cleanVal(llm.rejectReason) || 'Not a recognized business document'
+      result.reviewReason = `⚠ Not a business document: ${why}`
+    }
+    return result
   } catch (err) {
     console.warn(`[classifier] ${engine} failed, using deterministic:`, err.message)
     const fields = fieldsFromBase(base.type, base)

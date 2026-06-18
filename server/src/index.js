@@ -7,6 +7,7 @@ import { store } from './store.js'
 import { runRetentionSweep } from './pipeline.js'
 import { startWatchers } from './watchers.js'
 import { classifierEngine } from './classifier.js'
+import { purgeExpiredTrash } from './maintenance.js'
 
 // Safety net: never let a single bad file / background worker crash the server.
 process.on('uncaughtException', (err) => console.error('[uncaughtException]', err?.message || err))
@@ -58,6 +59,12 @@ setInterval(() => {
     if (r.expiring || r.expired) console.log('[retention] sweep:', r)
   } catch (err) { console.error('[retention] sweep failed:', err.message) }
 }, 60 * 60 * 1000)
+
+// Purge soft-deleted documents past the 30-day recovery window.
+purgeExpiredTrash().then((r) => r.purged && console.log('[trash] purged:', r.purged)).catch(() => {})
+setInterval(() => {
+  purgeExpiredTrash().then((r) => r.purged && console.log('[trash] purged:', r.purged)).catch((e) => console.error('[trash] purge failed:', e.message))
+}, 6 * 60 * 60 * 1000)
 
 app.listen(config.port, () => {
   console.log(`\n  FlowSphere DMS API  ·  http://localhost:${config.port}`)

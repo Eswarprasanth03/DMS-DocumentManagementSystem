@@ -105,9 +105,10 @@ export default function Browse() {
   // Hide duplicates (and tombstoned docs) from the folder view; they're still
   // detected and stored for audit, just not shown to avoid clutter.
   const liveFiles = (files || []).filter((d) => !d.tombstone)
-  const isDupe = (d) => d.duplicate || d.status === 'Duplicate'
-  const hiddenDupes = liveFiles.filter(isDupe).length
-  const visibleFiles = showDupes ? liveFiles : liveFiles.filter((d) => !isDupe(d))
+  // Hide duplicates and quarantined non-business documents from the folder view.
+  const isHidden = (d) => d.duplicate || d.status === 'Duplicate' || d.nonBusiness
+  const hiddenDupes = liveFiles.filter(isHidden).length
+  const visibleFiles = showDupes ? liveFiles : liveFiles.filter((d) => !isHidden(d))
 
   return (
     <div>
@@ -197,7 +198,7 @@ export default function Browse() {
               {hiddenDupes > 0 && (
                 <button onClick={() => setShowDupes((s) => !s)} title="Toggle duplicates" className="focus:outline-none">
                   <Badge tone={showDupes ? 'brand' : 'warning'}>
-                    {showDupes ? `Hide ${hiddenDupes} duplicate${hiddenDupes > 1 ? 's' : ''}` : `${hiddenDupes} duplicate${hiddenDupes > 1 ? 's' : ''} hidden`}
+                    {showDupes ? `Hide ${hiddenDupes} flagged` : `${hiddenDupes} flagged hidden`}
                   </Badge>
                 </button>
               )}

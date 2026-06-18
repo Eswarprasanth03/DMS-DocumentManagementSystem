@@ -1,14 +1,23 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Card, Button, Badge, StateBadge, EmptyState, Progress, Loading, ErrorState } from '../components/ui.jsx'
+import { Card, Button, Badge, StateBadge, EmptyState, Progress, Input, Select, Loading, ErrorState } from '../components/ui.jsx'
 import { confidenceTone } from '../lib/theme.js'
 import {
   IconFile, IconChevronRight, IconBrain, IconTag, IconHistory, IconLock,
-  IconDownload, IconSignature, IconWarning, IconCheck, IconPlus, IconX, IconEye,
+  IconDownload, IconSignature, IconWarning, IconCheck, IconPlus, IconX, IconEye, IconPen,
 } from '../components/icons.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { api } from '../lib/api.js'
 import { formatAmount } from '../lib/format.js'
+import { useAuth } from '../context/AuthContext.jsx'
+
+const ALL_TYPES = [
+  'Invoice', 'GST Invoice', 'Receipt', 'Travel Bill', 'Hotel Invoice', 'Fuel Bill',
+  'Taxi Receipt', 'Meal Bill', 'Purchase Order', 'Goods Receipt', 'Bank Statement', 'GST Return',
+  'Contract', 'MSA', 'NDA', 'Offer Letter', 'Experience Letter', 'HR Document',
+  'Compliance Document', 'Miscellaneous',
+]
+const RETENTIONS = ['3yr', '5yr', '7yr', '8yr', 'active+3yr', 'permanent']
 
 const TABS = ['Metadata', 'Versions', 'Audit']
 
@@ -21,9 +30,12 @@ export default function DocumentView() {
     return { doc: doc.document, versions: versions.versions, audit: audit.audit }
   }, [id])
 
+  const { can } = useAuth()
   const [tab, setTab] = useState('Metadata')
   const [newTag, setNewTag] = useState('')
   const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({})
   const [preview, setPreview] = useState({ loading: false, error: false, kind: null, url: null, html: '', text: '' })
 
   // Load the ORIGINAL uploaded file (from GridFS) and prepare an inline preview
@@ -100,6 +112,27 @@ export default function DocumentView() {
   const rollback = async (v) => { setBusy(true); try { await api.rollback(doc.id, v); await reload() } finally { setBusy(false) } }
   const reprocess = async () => { setBusy(true); try { await api.reprocess(doc.id); await reload() } finally { setBusy(false) } }
 
+  const startEdit = () => {
+    setForm({
+      type: doc.type || '', vendor: doc.vendor || '', client: doc.client || '',
+      invoiceNumber: doc.invoiceNumber || '', date: doc.date || '', amount: doc.amount ?? '',
+      currency: doc.currency || 'INR', department: doc.department || '', retention: doc.retention || '',
+    })
+    setEditing(true)
+  }
+  const saveEdit = async () => {
+    setBusy(true)
+    try {
+      await api.updateDocument(doc.id, {
+        type: form.type, vendor: form.vendor, client: form.client, invoiceNumber: form.invoiceNumber,
+        date: form.date, amount: form.amount === '' ? null : Number(form.amount), currency: form.currency,
+        department: form.department, retention: form.retention, note: 'Edited attributes',
+      })
+      setEditing(false)
+      await reload()
+    } catch (e) { alert(e.message) } finally { setBusy(false) }
+  }
+
   const sendEsign = async () => {
     setBusy(true)
     try {
@@ -175,31 +208,69 @@ export default function DocumentView() {
               </Badge>
             </div>
             <Progress value={Math.round(docConf * 100)} tone={confidenceTone(docConf)} />
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div><div className="text-[11px] text-gray-500">Type</div><div className="text-gray-900">{doc.type}</div></div>
-              <div><div className="text-[11px] text-gray-500">Vendor</div><div className="text-gray-900">{doc.vendor}</div></div>
-              <div><div className="text-[11px] text-gray-500">Amount</div><div className="text-gray-900">{formatAmount(doc.amount, doc.currency)}</div></div>
-              <div><div className="text-[11px] text-gray-500">Date</div><div className="text-gray-900">{doc.date}</div></div>
-              <div><div className="text-[11px] text-gray-500">Retention</div><div className="text-gray-900">{doc.retention}</div></div>
-              <div><div className="text-[11px] text-gray-500">Version</div><div className="text-gray-900">v{doc.version}</div></div>
-              <div><div className="text-[11px] text-gray-500">Department</div><div className="text-gray-900">{doc.department || '—'}</div></div>
-              <div><div className="text-[11px] text-gray-500">Relationship</div><div className="text-gray-900 capitalize">{doc.relationship || 'owned'}</div></div>
-            </div>
-            {(doc.channel || doc.classifier) && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {doc.channel && <Badge tone="neutral">via {doc.channel}</Badge>}
-                {doc.classifier && <Badge tone="brand">classifier: {doc.classifier}</Badge>}
-                {doc.ocrEngine && <Badge tone="neutral">ocr: {doc.ocrEngine}</Badge>}
+            {editing ? (
+              <div className="mt-4 space-y-2.5 text-sm">
+                <div>
+                  <div className="text-[11px] text-gray-500 mb-1">Type</div>
+                  <Select value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))} className="w-full">
+                    {ALL_TYPES.map((t) => <option key={t}>{t}</option>)}
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><div className="text-[11px] text-gray-500 mb-1">Vendor</div><Input value={form.vendor} onChange={(e) => setForm((p) => ({ ...p, vendor: e.target.value }))} /></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">Client</div><Input value={form.client} onChange={(e) => setForm((p) => ({ ...p, client: e.target.value }))} /></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">Invoice #</div><Input value={form.invoiceNumber} onChange={(e) => setForm((p) => ({ ...p, invoiceNumber: e.target.value }))} /></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">Date</div><Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} /></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">Amount</div><Input type="number" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} /></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">Currency</div><Input value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))} /></div>
+                  <div><div className="text-[11px] text-gray-500 mb-1">Department</div><Input value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} /></div>
+                  <div>
+                    <div className="text-[11px] text-gray-500 mb-1">Retention</div>
+                    <Select value={form.retention} onChange={(e) => setForm((p) => ({ ...p, retention: e.target.value }))} className="w-full">
+                      {RETENTIONS.map((r) => <option key={r}>{r}</option>)}
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button size="sm" className="flex-1" disabled={busy} onClick={saveEdit}><IconCheck className="w-3.5 h-3.5" /> Save</Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div><div className="text-[11px] text-gray-500">Type</div><div className="text-gray-900">{doc.type}</div></div>
+                  <div><div className="text-[11px] text-gray-500">Vendor</div><div className="text-gray-900">{doc.vendor}</div></div>
+                  <div><div className="text-[11px] text-gray-500">Amount</div><div className="text-gray-900">{formatAmount(doc.amount, doc.currency)}</div></div>
+                  <div><div className="text-[11px] text-gray-500">Date</div><div className="text-gray-900">{doc.date}</div></div>
+                  {doc.invoiceNumber && <div><div className="text-[11px] text-gray-500">Invoice #</div><div className="text-gray-900">{doc.invoiceNumber}</div></div>}
+                  <div><div className="text-[11px] text-gray-500">Retention</div><div className="text-gray-900">{doc.retention}</div></div>
+                  <div><div className="text-[11px] text-gray-500">Department</div><div className="text-gray-900">{doc.department || '—'}</div></div>
+                  <div><div className="text-[11px] text-gray-500">Version</div><div className="text-gray-900">v{doc.version}</div></div>
+                </div>
+                {(doc.channel || doc.classifier || doc.manuallyVerified) && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {doc.manuallyVerified && <Badge tone="success"><IconCheck className="w-3 h-3" /> Verified</Badge>}
+                    {doc.channel && <Badge tone="neutral">via {doc.channel}</Badge>}
+                    {doc.classifier && <Badge tone="brand">classifier: {doc.classifier}</Badge>}
+                    {doc.ocrEngine && <Badge tone="neutral">ocr: {doc.ocrEngine}</Badge>}
+                  </div>
+                )}
+                <div className="mt-4 flex gap-2">
+                  {can('upload') && (
+                    <Button variant="secondary" size="sm" className="flex-1" disabled={busy} onClick={startEdit}>
+                      <IconPen className="w-3.5 h-3.5" /> Edit
+                    </Button>
+                  )}
+                  <Button variant="secondary" size="sm" className="flex-1" disabled={busy} onClick={reprocess}>
+                    <IconHistory className="w-3.5 h-3.5" /> Reprocess
+                  </Button>
+                  <Button variant="gradient" size="sm" className="flex-1" disabled={busy} onClick={sendEsign}>
+                    <IconSignature className="w-3.5 h-3.5" /> eSign
+                  </Button>
+                </div>
+              </>
             )}
-            <div className="mt-4 flex gap-2">
-              <Button variant="secondary" size="sm" className="flex-1" disabled={busy} onClick={reprocess}>
-                <IconHistory className="w-3.5 h-3.5" /> Reprocess AI
-              </Button>
-              <Button variant="gradient" size="sm" className="flex-1" disabled={busy} onClick={sendEsign}>
-                <IconSignature className="w-3.5 h-3.5" /> eSign
-              </Button>
-            </div>
           </Card>
 
           <Card className="p-0 overflow-hidden">

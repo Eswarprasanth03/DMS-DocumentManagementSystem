@@ -10,6 +10,8 @@ import DocumentView from './pages/DocumentView.jsx'
 import Search from './pages/Search.jsx'
 import Trips from './pages/Trips.jsx'
 import Review from './pages/Review.jsx'
+import Duplicates from './pages/Duplicates.jsx'
+import Trash from './pages/Trash.jsx'
 import Retention from './pages/Retention.jsx'
 import Bonds from './pages/Bonds.jsx'
 import Audit from './pages/Audit.jsx'
@@ -43,6 +45,8 @@ export default function App() {
       <Route path="/search" element={<Protected><Search /></Protected>} />
       <Route path="/trips" element={<Protected><Trips /></Protected>} />
       <Route path="/review" element={<Protected><Review /></Protected>} />
+      <Route path="/duplicates" element={<Protected><Duplicates /></Protected>} />
+      <Route path="/trash" element={<Protected><Trash /></Protected>} />
       <Route path="/retention" element={<Protected><Retention /></Protected>} />
       <Route path="/bonds" element={<Protected><Bonds /></Protected>} />
       <Route path="/audit" element={<Protected><Audit /></Protected>} />

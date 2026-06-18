@@ -81,6 +81,23 @@ export const api = {
   reprocess: (id) => request(`/documents/${id}/reprocess`, { method: 'POST' }),
   approveDocument: (id, body = {}) => request(`/documents/${id}/approve`, { method: 'PATCH', body }),
   rejectDocument: (id, reason) => request(`/documents/${id}/reject`, { method: 'PATCH', body: { reason } }),
+  correctDocument: (id, body) => request(`/documents/${id}/correct`, { method: 'PATCH', body }),
+
+  // duplicate management
+  duplicates: () => request('/documents/duplicates'),
+  dismissDuplicate: (id) => request(`/documents/${id}/dismiss-duplicate`, { method: 'POST' }),
+  mergeDuplicate: (targetId, sourceId) => request(`/documents/${targetId}/merge`, { method: 'POST', body: { sourceId } }),
+  softDelete: (id, reason, retainedId) => request(`/documents/${id}/soft-delete`, { method: 'POST', body: { reason, retainedId } }),
+
+  // trash / purge
+  trash: () => request('/documents/trash'),
+  restoreDocument: (id) => request(`/documents/${id}/restore`, { method: 'POST' }),
+  purgeDocument: (id, confirm) => request(`/documents/${id}/purge`, { method: 'DELETE', body: { confirm } }),
+
+  // notifications
+  notifications: () => request('/notifications'),
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  readAllNotifications: () => request('/notifications/read-all', { method: 'POST' }),
   rollback: (id, v) => request(`/documents/${id}/rollback/${v}`, { method: 'POST' }),
   versions: (id) => request(`/documents/${id}/versions`),
   documentAudit: (id) => request(`/documents/${id}/audit`),
