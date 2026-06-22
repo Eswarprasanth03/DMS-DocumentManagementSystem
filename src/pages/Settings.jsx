@@ -1,7 +1,45 @@
 import { useState } from 'react'
 import { Card, PageHeader, Badge, Button, Avatar, SectionTitle } from '../components/ui.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { IconShield, IconBrain, IconCheck } from '../components/icons.jsx'
+import { useTheme } from '../context/ThemeContext.jsx'
+import { IconShield, IconBrain, IconCheck, IconSun, IconMoon, IconMonitor } from '../components/icons.jsx'
+
+const THEME_OPTIONS = [
+  { id: 'light', label: 'Light', icon: IconSun },
+  { id: 'dark', label: 'Dark', icon: IconMoon },
+  { id: 'system', label: 'System', icon: IconMonitor },
+]
+
+function AppearanceCard() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <Card className="p-5">
+      <SectionTitle className="mb-3 flex items-center gap-1.5"><IconSun className="w-3.5 h-3.5" /> Appearance</SectionTitle>
+      <div className="text-sm text-gray-800 mb-1">Theme</div>
+      <div className="text-[11px] text-gray-500 mb-3">Choose light, dark, or follow your system setting.</div>
+      <div className="grid grid-cols-3 gap-2">
+        {THEME_OPTIONS.map((o) => {
+          const active = theme === o.id
+          return (
+            <button
+              key={o.id}
+              onClick={() => setTheme(o.id)}
+              className={`flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-xs font-medium transition ${
+                active
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <o.icon className="w-5 h-5" />
+              {o.label}
+              {active && <IconCheck className="w-3.5 h-3.5 text-indigo-500" />}
+            </button>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
 
 function Toggle({ on, onChange }) {
   return (
@@ -54,6 +92,8 @@ export default function Settings() {
             <div className="flex justify-between"><span className="text-gray-500">Auth</span><span className="text-gray-800">JWT + OAuth 2.0</span></div>
           </div>
         </Card>
+
+        <AppearanceCard />
 
         <Card className="p-5">
           <SectionTitle className="mb-1 flex items-center gap-1.5"><IconBrain className="w-3.5 h-3.5" /> AI pipeline</SectionTitle>

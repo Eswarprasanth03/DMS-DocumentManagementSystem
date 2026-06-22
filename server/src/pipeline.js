@@ -182,13 +182,44 @@ function detectGstin(text) {
   return m ? m[0].toUpperCase() : null
 }
 
+// Short document-type code used in the auto-generated filename (the token that
+// used to be a hard-coded "INV"). Each type gets its own tag so the filename
+// itself tells you what kind of document it is.
+export const TYPE_CODE = {
+  'Taxi Receipt': 'TAXI',
+  'Hotel Invoice': 'HTL',
+  'Meal Bill': 'MEAL',
+  'Travel Bill': 'TRV',
+  'Fuel Bill': 'FUEL',
+  'GST Invoice': 'GST',
+  Invoice: 'INV',
+  Receipt: 'RCP',
+  'Purchase Order': 'PO',
+  'Goods Receipt': 'GRN',
+  'Bank Statement': 'BANK',
+  'GST Return': 'GSTR',
+  MSA: 'MSA',
+  NDA: 'NDA',
+  Contract: 'CTR',
+  'Offer Letter': 'OFR',
+  'Experience Letter': 'EXP',
+  'HR Document': 'HR',
+  'Compliance Document': 'CMP',
+  Miscellaneous: 'DOC',
+}
+
+export function typeCode(type) {
+  return TYPE_CODE[type] || 'DOC'
+}
+
 export function autoName({ type, vendor, date, seq, ext = 'pdf' }) {
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 12)
   const t = slug(type)
   const v = slug(vendor) || 'vendor'
+  const code = typeCode(type)
   const n = String(seq).padStart(4, '0')
   const e = String(ext || 'pdf').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'pdf'
-  return `${t}-${v}-INV-${n}.${e}`
+  return `${t}-${v}-${code}-${n}.${e}`
 }
 
 // Department inferred from the document category (slide 04 metadata field).

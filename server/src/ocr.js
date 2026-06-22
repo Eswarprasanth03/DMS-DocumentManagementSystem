@@ -9,6 +9,7 @@ import { mimeForName } from './mime.js'
 // Vision uses the configured NVIDIA omni (multimodal) model. Never throws.
 
 const IMAGE_EXT = /\.(png|jpe?g|tiff?|bmp|gif|webp)$/i
+const SHEET_EXT = /\.(xlsx|xlsm|xls|ods|csv)$/i
 
 let pdfParseLock = Promise.resolve()
 let tesseractWorker = null
@@ -46,6 +47,23 @@ async function extractPdfText(buffer) {
   const result = pdfParseLock.then(run, run)
   pdfParseLock = result.catch(() => undefined)
   return result
+}
+
+// ---- Spreadsheets (xlsx/xls/ods/csv) → flattened text ---------------------
+async function extractSpreadsheet(buffer) {
+  try {
+    const XLSX = await import('xlsx')
+    const wb = XLSX.read(buffer, { type: 'buffer' })
+    const parts = []
+    for (const name of wb.SheetNames) {
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name])
+      if (csv && csv.trim()) parts.push(`# ${name}\n${csv}`)
+    }
+    return clean(parts.join('\n').replace(/,+/g, ' ').replace(/"/g, ''))
+  } catch (err) {
+    console.warn('[ocr] spreadsheet parse failed:', err.message)
+    return ''
+  }
 }
 
 // ---- Vision LLM OCR (NVIDIA omni, OpenAI-compatible multimodal) ------------
@@ -129,13 +147,21 @@ export async function ocrExtract(buffer, filename = '') {
     return { text: text || extractPlainText(buffer), engine: 'pdf', confidence: text ? 60 : 0 }
   }
 
-  // 2) Image — vision OCR, then Tesseract fallback.
+  // 2) Spreadsheets — parse cells to text (no OCR needed).
+  if (SHEET_EXT.test(filename)) {
+    const sheetText = await extractSpreadsheet(buffer)
+    if (sheetText) return { text: sheetText, engine: 'sheet', confidence: 95 }
+  }
+
+  // 3) Image — vision OCR (one retry on empty), then Tesseract fallback.
   if (IMAGE_EXT.test(filename)) {
     if (visionAvailable()) {
-      try {
-        const t = await visionOcr(buffer, mimeForName(filename))
-        if (t) return { text: t, engine: 'vlm', confidence: 90 }
-      } catch (err) { console.warn('[ocr] vision image failed:', err.message) }
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const t = await visionOcr(buffer, mimeForName(filename))
+          if (t) return { text: t, engine: 'vlm', confidence: 90 }
+        } catch (err) { console.warn(`[ocr] vision image attempt ${attempt}/2 failed:`, err.message) }
+      }
     }
     if (config.ocrEngine === 'tesseract') {
       try {
@@ -145,7 +171,7 @@ export async function ocrExtract(buffer, filename = '') {
     }
   }
 
-  // 3) Plain text / fallback.
+  // 4) Plain text / fallback.
   return { text: extractPlainText(buffer), engine: 'extract', confidence: 50 }
 }
 

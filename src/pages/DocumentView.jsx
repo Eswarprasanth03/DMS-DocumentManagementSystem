@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Card, Button, Badge, StateBadge, EmptyState, Progress, Input, Select, Loading, ErrorState } from '../components/ui.jsx'
+import { Card, Button, Badge, StateBadge, EmptyState, Progress, Input, Select, Avatar, Loading, ErrorState } from '../components/ui.jsx'
 import { confidenceTone } from '../lib/theme.js'
 import {
   IconFile, IconChevronRight, IconBrain, IconTag, IconHistory, IconLock,
-  IconDownload, IconSignature, IconWarning, IconCheck, IconPlus, IconX, IconEye, IconPen,
+  IconDownload, IconSignature, IconWarning, IconCheck, IconPlus, IconX, IconEye, IconPen, IconCopy,
 } from '../components/icons.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { api } from '../lib/api.js'
-import { formatAmount } from '../lib/format.js'
+import { formatAmount, relTime } from '../lib/format.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
 const ALL_TYPES = [
@@ -20,6 +20,83 @@ const ALL_TYPES = [
 const RETENTIONS = ['3yr', '5yr', '7yr', '8yr', 'active+3yr', 'permanent']
 
 const TABS = ['Metadata', 'Versions', 'Audit']
+
+// Sender provenance for email-ingested documents — so an admin can trace a
+// false / incorrect file straight back to whoever emailed it.
+function SenderCard({ meta, flagged, reason }) {
+  const [copied, setCopied] = useState('')
+  const display = meta.fromName || meta.from
+  const copy = (val, key) => {
+    try { navigator.clipboard.writeText(val) } catch { /* ignore */ }
+    setCopied(key); setTimeout(() => setCopied(''), 1500)
+  }
+  return (
+    <Card className={`p-5 ${flagged ? 'ring-1 ring-rose-200' : ''}`}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-900">Email sender</h3>
+        <Badge tone={flagged ? 'error' : 'info'}>{flagged ? 'Flagged' : 'Received by email'}</Badge>
+      </div>
+
+      {flagged && (
+        <div className="mb-3 rounded-lg bg-rose-50 text-rose-700 text-xs px-3 py-2 flex items-start gap-2">
+          <IconWarning className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>This file was flagged{reason ? ` — ${reason}` : ''}. Verify with the sender below before actioning.</span>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Avatar name={display} className="w-10 h-10 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-gray-900 truncate">{display}</div>
+          <div className="flex items-center gap-1.5">
+            <a href={`mailto:${meta.from}`} className="text-xs text-indigo-600 hover:text-indigo-700 truncate">{meta.from}</a>
+            <button onClick={() => copy(meta.from, 'from')} title="Copy email" className="text-gray-400 hover:text-gray-600">
+              {copied === 'from' ? <IconCheck className="w-3.5 h-3.5 text-emerald-500" /> : <IconCopy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <dl className="mt-4 space-y-2.5 text-sm">
+        {meta.subject && (
+          <div>
+            <dt className="text-[11px] text-gray-500">Subject</dt>
+            <dd className="text-gray-800 break-words">{meta.subject}</dd>
+          </div>
+        )}
+        {meta.receivedAt && (
+          <div>
+            <dt className="text-[11px] text-gray-500">Received</dt>
+            <dd className="text-gray-800" title={new Date(meta.receivedAt).toLocaleString()}>
+              {relTime(meta.receivedAt)} · {new Date(meta.receivedAt).toLocaleString()}
+            </dd>
+          </div>
+        )}
+        {meta.to && (
+          <div>
+            <dt className="text-[11px] text-gray-500">Sent to</dt>
+            <dd className="text-gray-800 break-words">{meta.to}</dd>
+          </div>
+        )}
+        {meta.messageId && (
+          <div>
+            <dt className="text-[11px] text-gray-500">Message ID</dt>
+            <dd className="flex items-center gap-1.5">
+              <span className="text-gray-500 text-xs truncate font-mono">{meta.messageId}</span>
+              <button onClick={() => copy(meta.messageId, 'mid')} title="Copy message ID" className="text-gray-400 hover:text-gray-600 shrink-0">
+                {copied === 'mid' ? <IconCheck className="w-3.5 h-3.5 text-emerald-500" /> : <IconCopy className="w-3.5 h-3.5" />}
+              </button>
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      <a href={`mailto:${meta.from}?subject=${encodeURIComponent(`Re: ${meta.subject || 'document you sent'}`)}`} className="mt-4 block">
+        <Button variant="secondary" size="sm" className="w-full">Reply to sender</Button>
+      </a>
+    </Card>
+  )
+}
 
 export default function DocumentView() {
   const { id } = useParams()
@@ -272,6 +349,14 @@ export default function DocumentView() {
               </>
             )}
           </Card>
+
+          {doc.emailMeta?.from && (
+            <SenderCard
+              meta={doc.emailMeta}
+              flagged={Boolean(doc.nonBusiness) || doc.status === 'Needs Review'}
+              reason={doc.reviewReason}
+            />
+          )}
 
           <Card className="p-0 overflow-hidden">
             <div className="flex border-b border-gray-100">

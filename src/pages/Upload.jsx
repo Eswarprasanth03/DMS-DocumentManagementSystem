@@ -153,7 +153,9 @@ export default function Upload() {
                     <div className="text-[11px] text-gray-500 truncate">{ch.detail}</div>
                   </div>
                   <div className="text-right shrink-0">
-                    <Badge tone="success">active</Badge>
+                    <Badge tone={ch.status === 'active' ? 'success' : ch.status === 'connecting' ? 'warning' : 'neutral'}>
+                      {ch.status || 'active'}
+                    </Badge>
                     {ch.processed != null && (
                       <div className="text-[10px] text-gray-400 mt-0.5">{ch.processed} ingested</div>
                     )}

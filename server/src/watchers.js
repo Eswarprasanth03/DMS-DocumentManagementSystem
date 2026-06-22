@@ -3,6 +3,7 @@ import path from 'node:path'
 import { config } from './config.js'
 import * as storage from './storage.js'
 import { ingestBuffer } from './ingest.js'
+import { imapStatus } from './imap.js'
 
 // Background ingest watchers. Each channel is a real folder; dropping a file in
 // it runs the full pipeline automatically (scan-to-folder, mail attachments,
@@ -46,6 +47,16 @@ async function waitStable(filePath, tries = 10) {
 async function processEml(filePath) {
   const { simpleParser } = await import('mailparser')
   const parsed = await simpleParser(fs.readFileSync(filePath))
+  const fromObj = parsed.from?.value?.[0] || {}
+  const source = {
+    channel: 'email',
+    from: fromObj.address || parsed.from?.text || 'unknown',
+    fromName: fromObj.name || '',
+    subject: parsed.subject || '(no subject)',
+    messageId: parsed.messageId || null,
+    receivedAt: (parsed.date ? new Date(parsed.date) : new Date()).toISOString(),
+    to: parsed.to?.value?.[0]?.address || null,
+  }
   const atts = (parsed.attachments || []).filter((a) => a.content?.length)
   if (atts.length) {
     for (const a of atts) {
@@ -58,6 +69,7 @@ async function processEml(filePath) {
         channel: 'email',
         storageKey: key,
         hints: { text: `${parsed.subject || ''} ${parsed.text || ''}` },
+        source,
       })
       stats.email.processed++
       stats.email.lastFile = a.filename
@@ -119,12 +131,28 @@ export function startWatchers() {
 }
 
 export function channelStatus() {
+  const imap = imapStatus()
+  const imapDetail = !imap.enabled
+    ? (imap.configured ? 'configured — set IMAP_ENABLED=true' : 'not configured')
+    : imap.lastError
+      ? `error: ${imap.lastError}`
+      : `${imap.user} · every ${imap.pollSeconds}s`
   return {
     manual: { type: 'Manual upload', status: 'active', detail: 'Drag & drop / file picker' },
     api: { type: 'API push', status: 'active', detail: 'POST /api/documents/upload' },
     hotfolder: { type: 'Hot-folder watcher', status: 'active', detail: rel(config.dropDir), processed: stats.hotfolder.processed, lastFile: stats.hotfolder.lastFile },
     scanner: { type: 'Scanner (scan-to-folder)', status: 'active', detail: rel(config.scannerDir), processed: stats.scanner.processed, lastFile: stats.scanner.lastFile },
-    email: { type: 'Email-to-ingest', status: 'active', detail: `${rel(config.maildropDir)} (.eml)`, processed: stats.email.processed, lastFile: stats.email.lastFile },
+    email: { type: 'Email drop (.eml)', status: 'active', detail: `${rel(config.maildropDir)} (.eml)`, processed: stats.email.processed, lastFile: stats.email.lastFile },
+    imap: {
+      type: 'Email inbox (IMAP)',
+      status: imap.enabled ? (imap.connected ? 'active' : 'connecting') : 'inactive',
+      detail: imapDetail,
+      processed: imap.processed,
+      lastFile: imap.lastFile,
+      lastFrom: imap.lastFrom,
+      lastSubject: imap.lastSubject,
+      lastPollAt: imap.lastPollAt,
+    },
   }
 }
 

@@ -84,7 +84,7 @@ router.get('/users', authRequired, requirePerm('settings'), (req, res) => {
 // STATS (dashboard)
 // ===========================================================================
 router.get('/stats', authRequired, (req, res) => {
-  const docs = store.all('documents')
+  const docs = store.all('documents').filter((d) => !d.tombstone)
   const needsReview = docs.filter((d) => d.status === 'Needs Review').length
   const duplicates = docs.filter((d) => d.duplicate).length
   const classified = docs.filter((d) => !d.duplicate)
@@ -127,6 +127,8 @@ router.get('/folders/:id/path', authRequired, requirePerm('browse'), (req, res) 
 router.get('/documents', authRequired, requirePerm('browse'), (req, res) => {
   const { folderId, status } = req.query
   let docs = store.all('documents')
+  // Hide soft-deleted (tombstoned) documents — they live in Trash.
+  docs = docs.filter((d) => !d.tombstone)
   if (folderId) docs = docs.filter((d) => d.folderId === folderId)
   if (status) docs = docs.filter((d) => d.status === status)
   // Folder -> file permission inheritance.
@@ -251,15 +253,28 @@ router.patch('/documents/:id/reject', authRequired, requirePerm('review'), (req,
   const doc = store.findById('documents', req.params.id)
   if (!doc) return res.status(404).json({ error: 'Document not found' })
   const reason = (req.body && req.body.reason) || 'Rejected in review'
-  const updated = store.update('documents', doc.id, { status: 'Rejected', reviewReason: reason })
-  audit({ user: req.user, action: 'review', doc: doc.name, docId: doc.id, detail: `Rejected: ${reason}`, ip: ipOf(req) })
-  res.json({ document: serializeDoc(updated) })
+  // Rejecting in review sends the document to Trash (soft-delete) — it leaves
+  // every active view, is recoverable for 30 days, and can be permanently
+  // purged by an admin from the Trash page.
+  const updated = store.update('documents', doc.id, {
+    status: 'Deleted',
+    tombstone: true,
+    deletedAt: nowIso(),
+    deletedBy: req.user.name,
+    deleteReason: `Rejected in review: ${reason}`,
+    reviewReason: reason,
+  })
+  audit({ user: req.user, action: 'review', doc: doc.name, docId: doc.id, detail: `Rejected in review → moved to Trash (${reason})`, ip: ipOf(req) })
+  if (doc.uploadedBy && doc.uploadedBy !== req.user.name) {
+    notify({ to: doc.uploadedBy, tone: 'warning', title: 'A document you submitted was rejected', detail: `${doc.name} — ${reason}`, docId: doc.id })
+  }
+  res.json({ document: serializeDoc(updated), trashed: true })
 })
 
 // FEATURE 1 — Admin metadata correction for failed/incomplete classifications.
 // Applies corrected fields, renames the file per convention, marks the document
 // "Manually Verified", and records before/after in the audit trail.
-const CORRECTABLE = ['type', 'vendor', 'client', 'invoiceNumber', 'date', 'amount', 'currency', 'department', 'category', 'retention', 'tags']
+const CORRECTABLE = ['type', 'vendor', 'client', 'invoiceNumber', 'date', 'amount', 'currency', 'gstin', 'department', 'category', 'retention', 'tags']
 router.patch('/documents/:id/correct', authRequired, requirePerm('review'), (req, res) => {
   const doc = store.findById('documents', req.params.id)
   if (!doc) return res.status(404).json({ error: 'Document not found' })
@@ -272,7 +287,7 @@ router.patch('/documents/:id/correct', authRequired, requirePerm('review'), (req
   }
   // Keep the structured fields map in sync with the corrected flat values.
   const fields = { ...(doc.fields || {}) }
-  const fieldMap = { vendor: 'vendorName', client: 'client', invoiceNumber: 'invoiceNumber', date: 'invoiceDate', amount: 'totalAmount' }
+  const fieldMap = { vendor: 'vendorName', client: 'client', invoiceNumber: 'invoiceNumber', date: 'invoiceDate', amount: 'totalAmount', gstin: 'gstin' }
   for (const [flat, fk] of Object.entries(fieldMap)) {
     if (flat in body && body[flat] != null && body[flat] !== '') {
       fields[fk] = { value: body[flat], confidence: 1, source: 'manual' }
@@ -463,8 +478,12 @@ router.patch('/documents/:id', authRequired, requirePerm('upload'), (req, res) =
   if (!doc) return res.status(404).json({ error: 'Document not found' })
   const patch = {}
   const before = {}
-  for (const key of ['type', 'vendor', 'amount', 'date', 'client', 'invoiceNumber', 'currency', 'department', 'gstin', 'category', 'retention', 'tags', 'status']) {
+  for (const key of ['type', 'vendor', 'amount', 'date', 'client', 'invoiceNumber', 'currency', 'department', 'gstin', 'category', 'retention', 'tags', 'status', 'folderId']) {
     if (key in req.body) { before[key] = doc[key] ?? null; patch[key] = req.body[key] }
+  }
+  // Moving to another folder must respect that folder's role permissions.
+  if ('folderId' in patch && !folderAllowsRole(patch.folderId, req.user.role)) {
+    return res.status(403).json({ error: 'Forbidden: your role cannot access the target folder' })
   }
   // Keep category/retention consistent if the type changed (unless explicitly set).
   if ('type' in patch && !('category' in patch)) {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useTheme } from '../context/ThemeContext.jsx'
 import { Avatar, Badge } from './ui.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { api } from '../lib/api.js'
@@ -8,8 +9,24 @@ import {
   IconBolt, IconDashboard, IconUpload, IconFolder, IconSearch, IconMap,
   IconClock, IconLock, IconHistory, IconShield, IconBell, IconHelp,
   IconSettings, IconLogout, IconDocCheck, IconSignature, IconChevronDown,
-  IconCopy, IconTrash,
+  IconCopy, IconTrash, IconSun, IconMoon, IconMonitor,
 } from './icons.jsx'
+
+function ThemeToggle() {
+  const { theme, cycle } = useTheme()
+  const Icon = theme === 'light' ? IconSun : theme === 'dark' ? IconMoon : IconMonitor
+  const label = theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'System'
+  return (
+    <button
+      onClick={cycle}
+      title={`Theme: ${label} (click to switch)`}
+      aria-label={`Theme: ${label}`}
+      className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition"
+    >
+      <Icon className="w-5 h-5" />
+    </button>
+  )
+}
 
 // RBAC-driven navigation. Sections show/hide by permission, so the chrome is
 // role-aware (Live-data-driven, semantic, one-shell-many-pages principles).
@@ -233,6 +250,7 @@ function Topbar({ user, onLogout }) {
           </button>
           <NotificationMenu open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} unread={unread} onMarkAll={markAllRead} />
         </div>
+        <ThemeToggle />
         <button
           className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition"
           aria-label="Help"

@@ -11,7 +11,7 @@ import { extOf, mimeForName } from './mime.js'
 // Single source of truth for capturing a document. Used by manual upload, API
 // push, and the hot-folder / scanner / email watchers — so every channel runs
 // the identical pipeline: OCR -> classify -> auto-name -> file -> tag -> dedup.
-export async function ingestBuffer({ buffer, filename, channel = 'api', user, storageKey = null, hints = {} }) {
+export async function ingestBuffer({ buffer, filename, channel = 'api', user, storageKey = null, hints = {}, source = null }) {
   const actor = user?.name || user || `System (${channel})`
 
   // 1. OCR — the document's OWN content drives classification. Supplemental
@@ -67,6 +67,9 @@ export async function ingestBuffer({ buffer, filename, channel = 'api', user, st
     storageKey,
     channel,
     uploadedBy: actor,
+    // Provenance for email-ingested docs: who sent it, subject, when. Critical
+    // for tracing false/incorrect files back to the sender.
+    emailMeta: source || null,
     classifier: c.engine || 'deterministic',
     ocrEngine: ocrEngineUsed,
     tags: buildMetadata({ ...c, department, relationship }),
@@ -88,7 +91,8 @@ export async function ingestBuffer({ buffer, filename, channel = 'api', user, st
     },
   })
 
-  audit({ user: actor, action: 'upload', doc: doc.name, docId: doc.id, detail: `Captured via ${channel} (${(buffer.length / 1024).toFixed(0)} KB)`, ip: channel })
+  const senderNote = source?.from ? ` from ${source.fromName ? `${source.fromName} <${source.from}>` : source.from}` : ''
+  audit({ user: actor, action: 'upload', doc: doc.name, docId: doc.id, detail: `Captured via ${channel}${senderNote} (${(buffer.length / 1024).toFixed(0)} KB)`, ip: channel })
   audit({ user: 'System (AI)', action: 'classify', doc: doc.name, docId: doc.id, detail: `${c.type} · confidence ${c.confidence} · ${c.engine || 'deterministic'}`, ip: 'pipeline' })
   if (dup) audit({ user: 'System (AI)', action: 'dedup', doc: doc.name, docId: doc.id, detail: `duplicate of ${dup.name}`, ip: 'pipeline' })
 

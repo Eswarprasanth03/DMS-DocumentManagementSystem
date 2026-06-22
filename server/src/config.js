@@ -58,6 +58,22 @@ export const config = {
   nvidiaModel: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
   // Semantic search embeddings (NVIDIA retrieval model; hash fallback offline).
   embedModel: process.env.EMBED_MODEL || 'nvidia/nv-embedqa-e5-v5',
+  // --- Email ingestion (IMAP) ----------------------------------------------
+  // Poll a real mailbox (e.g. Gmail) and auto-ingest attachments through the
+  // same pipeline. Requires an app password for Gmail (2-Step Verification on).
+  imapEnabled: process.env.IMAP_ENABLED === 'true',
+  imapHost: process.env.IMAP_HOST || 'imap.gmail.com',
+  imapPort: Number(process.env.IMAP_PORT) || 993,
+  imapSecure: process.env.IMAP_SECURE !== 'false',
+  imapUser: process.env.IMAP_USER || '',
+  imapPass: (process.env.IMAP_PASSWORD || '').replace(/\s+/g, ''),
+  imapMailbox: process.env.IMAP_MAILBOX || 'INBOX',
+  imapPollSeconds: Number(process.env.IMAP_POLL_SECONDS) || 60,
+  imapMarkSeen: process.env.IMAP_MARK_SEEN !== 'false',
+  // Optional sender allow-list (comma-separated). Empty = accept from anyone.
+  imapAllowedSenders: (process.env.IMAP_ALLOWED_SENDERS || '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+
   // Classification confidence below this routes a doc to manual review.
   confidenceThreshold: 0.75,
   // Retention escalation windows (days).
