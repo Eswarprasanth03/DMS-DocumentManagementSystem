@@ -8,7 +8,7 @@ import { api } from '../lib/api.js'
 import {
   IconBolt, IconDashboard, IconUpload, IconFolder, IconSearch, IconMap,
   IconClock, IconLock, IconHistory, IconShield, IconBell, IconHelp,
-  IconSettings, IconLogout, IconDocCheck, IconSignature, IconChevronDown,
+  IconSettings, IconLogout, IconDocCheck, IconSignature, IconChevronDown, IconChevronRight,
   IconCopy, IconTrash, IconSun, IconMoon, IconMonitor,
 } from './icons.jsx'
 
@@ -67,9 +67,9 @@ const NAV = [
 
 function Sidebar({ can }) {
   return (
-    <aside className="hidden md:flex w-60 shrink-0 flex-col bg-slate-900 text-slate-300 sticky top-0 h-screen">
-      <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-800">
-        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 text-white shadow-lg shadow-indigo-500/30">
+    <aside className="hidden md:flex w-60 shrink-0 flex-col bg-[#0a0e17] text-slate-300 border-r border-slate-800/60 sticky top-0 h-screen">
+      <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-800/80">
+        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white shadow-lg shadow-indigo-500/30">
           <IconBolt className="w-5 h-5" />
         </div>
         <div className="leading-tight">
@@ -118,7 +118,7 @@ function Sidebar({ can }) {
   )
 }
 
-function NotificationMenu({ open, onClose, notifications, unread, onMarkAll }) {
+function NotificationMenu({ open, onClose, notifications, unread, onMarkAll, onOpen }) {
   if (!open) return null
   return (
     <>
@@ -136,22 +136,37 @@ function NotificationMenu({ open, onClose, notifications, unread, onMarkAll }) {
           <div className="px-4 py-6 text-center text-xs text-gray-400">You're all caught up.</div>
         )}
         <ul className="max-h-80 overflow-y-auto divide-y divide-gray-100">
-          {notifications.map((n) => (
-            <li key={n.id} className="px-4 py-3 hover:bg-gray-50">
-              <div className="flex items-start gap-2">
-                <span
-                  className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                    n.tone === 'error' ? 'bg-rose-500' : n.tone === 'warning' ? 'bg-amber-500' : 'bg-sky-500'
-                  }`}
-                />
-                <div>
-                  <div className={`text-sm ${n.read ? 'text-gray-700' : 'font-semibold text-gray-900'}`}>{n.title}</div>
-                  <div className="text-xs text-gray-500">{n.detail}</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{n.ts && n.ts.includes('T') ? new Date(n.ts).toLocaleString() : n.ts}</div>
-                </div>
-              </div>
-            </li>
-          ))}
+          {notifications.map((n) => {
+            const clickable = Boolean(n.docId || n.link)
+            return (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(n)}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-50 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span
+                      className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
+                        n.tone === 'error' ? 'bg-rose-500' : n.tone === 'warning' ? 'bg-amber-500' : 'bg-sky-500'
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm truncate ${n.read ? 'text-gray-700' : 'font-semibold text-gray-900'}`}>{n.title}</span>
+                        {n.ts === 'live' && <Badge tone="success">live</Badge>}
+                      </div>
+                      <div className="text-xs text-gray-500">{n.detail}</div>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="text-[10px] text-gray-400">{n.ts && n.ts.includes && n.ts.includes('T') ? new Date(n.ts).toLocaleString() : (n.ts === 'live' ? 'Live status' : n.ts)}</span>
+                        {clickable && <span className="text-[10px] font-medium text-indigo-600 inline-flex items-center gap-0.5">View <IconChevronRight className="w-3 h-3" /></span>}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </li>
+            )
+          })}
         </ul>
       </div>
     </>
@@ -195,21 +210,22 @@ function UserMenu({ user, onLogout }) {
   )
 }
 
-function buildStatsAlerts(stats) {
+function buildStatsAlerts(stats, can) {
   if (!stats) return []
   const out = []
-  if (stats.expiring || stats.expired)
-    out.push({ id: 'n-ret', tone: 'warning', title: `${stats.expiring + stats.expired} documents expiring/expired`, detail: 'Retention escalation', ts: 'live', read: true })
-  if (stats.trips)
-    out.push({ id: 'n-trip', tone: 'info', title: `${stats.trips} trip(s) detected`, detail: 'taxi + hotel within 72h', ts: 'live', read: true })
-  if (stats.duplicates)
-    out.push({ id: 'n-dup', tone: 'error', title: `${stats.duplicates} duplicate(s) flagged`, detail: 'vendor + amount + date match', ts: 'live', read: true })
-  if (stats.needsReview)
-    out.push({ id: 'n-rev', tone: 'warning', title: `${stats.needsReview} document(s) need review`, detail: 'confidence < 0.75', ts: 'live', read: true })
+  if ((stats.expiring || stats.expired) && can('retention'))
+    out.push({ id: 'n-ret', tone: 'warning', title: `${stats.expiring + stats.expired} documents expiring/expired`, detail: 'Retention escalation', ts: 'live', read: true, link: '/retention' })
+  if (stats.trips && can('trips'))
+    out.push({ id: 'n-trip', tone: 'info', title: `${stats.trips} trip(s) detected`, detail: 'taxi + hotel within 72h', ts: 'live', read: true, link: '/trips' })
+  if (stats.duplicates && can('upload'))
+    out.push({ id: 'n-dup', tone: 'error', title: `${stats.duplicates} duplicate(s) flagged`, detail: 'vendor + amount + date match', ts: 'live', read: true, link: '/duplicates' })
+  if (stats.needsReview && can('review'))
+    out.push({ id: 'n-rev', tone: 'warning', title: `${stats.needsReview} document(s) need review`, detail: 'confidence < 0.75', ts: 'live', read: true, link: '/review' })
   return out
 }
 
 function Topbar({ user, onLogout }) {
+  const { can } = useAuth()
   const [notifOpen, setNotifOpen] = useState(false)
   const [q, setQ] = useState('')
   const navigate = useNavigate()
@@ -218,8 +234,16 @@ function Topbar({ user, onLogout }) {
   const personal = notifData?.notifications || []
   const unread = notifData?.unread || 0
   // Personal (per-user) notifications first, then live operational alerts.
-  const notifications = [...personal, ...buildStatsAlerts(statsData)]
+  const notifications = [...personal, ...buildStatsAlerts(statsData, can)]
   const markAllRead = async () => { try { await api.readAllNotifications(); reloadNotif() } catch { /* ignore */ } }
+  const openNotif = async (n) => {
+    if (n.id && !String(n.id).startsWith('n-') && !n.read) {
+      try { await api.markNotificationRead(n.id); reloadNotif() } catch { /* ignore */ }
+    }
+    setNotifOpen(false)
+    const dest = n.docId ? `/document/${n.docId}` : n.link
+    if (dest) navigate(dest)
+  }
   return (
     <header className="sticky top-0 z-20 h-16 bg-white border-b border-gray-200 flex items-center gap-3 px-4 md:px-6">
       <div className="relative flex-1 max-w-md">
@@ -248,7 +272,7 @@ function Topbar({ user, onLogout }) {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
             )}
           </button>
-          <NotificationMenu open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} unread={unread} onMarkAll={markAllRead} />
+          <NotificationMenu open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} unread={unread} onMarkAll={markAllRead} onOpen={openNotif} />
         </div>
         <ThemeToggle />
         <button
@@ -274,7 +298,7 @@ export default function AppShell({ children }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex fs-app-bg">
       <Sidebar can={can} />
       <div className="flex-1 min-w-0 flex flex-col">
         <Topbar user={user} onLogout={handleLogout} />

@@ -113,6 +113,7 @@ export default function DocumentView() {
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
+  const [toast, setToast] = useState(null)
   const [preview, setPreview] = useState({ loading: false, error: false, kind: null, url: null, html: '', text: '' })
 
   // Load the ORIGINAL uploaded file (from GridFS) and prepare an inline preview
@@ -171,6 +172,49 @@ export default function DocumentView() {
   const docConf = doc.documentConfidence ?? doc.confidence ?? 0
   const fields = doc.fields || {}
 
+  // Resolve a value from the top-level attribute, the AI-extracted fields map,
+  // or the custom bag — so the summary shows important fields (invoice #, GSTIN,
+  // due date…) even when they only exist in `fields`.
+  const blank = (v) => v == null || v === '' || v === 'Unknown'
+  const pickVal = (...keys) => {
+    for (const k of keys) {
+      if (!blank(doc[k])) return doc[k]
+      if (!blank(fields[k]?.value)) return fields[k].value
+      if (!blank(doc.custom?.[k])) return doc.custom[k]
+    }
+    return null
+  }
+  const money = (v) => (v == null ? null : formatAmount(v, doc.currency || pickVal('currency') || 'INR'))
+  const summaryFields = [
+    ['Type', doc.type],
+    ['Vendor', pickVal('vendor', 'vendorName', 'merchant')],
+    ['Client', pickVal('client')],
+    ['Invoice #', pickVal('invoiceNumber')],
+    ['PO #', pickVal('poNumber')],
+    ['GRN #', pickVal('grnNumber')],
+    ['Date', pickVal('date', 'invoiceDate')],
+    ['Due date', pickVal('dueDate')],
+    ['Amount', money(pickVal('amount', 'totalAmount'))],
+    ['Tax', money(pickVal('taxAmount'))],
+    ['GSTIN', pickVal('gstin')],
+    ['Bank', pickVal('bankName')],
+    ['Account #', pickVal('accountNumber')],
+    ['Period', pickVal('period')],
+    ['Closing balance', money(pickVal('closingBalance'))],
+    ['Parties', pickVal('parties')],
+    ['Effective', pickVal('effectiveDate')],
+    ['Expiry', pickVal('expiryDate')],
+    ['Employee', pickVal('employeeName')],
+    ['Position', pickVal('position')],
+    ['Salary / CTC', money(pickVal('salary'))],
+    ['Joining', pickVal('joiningDate')],
+    ['Issuer', pickVal('issuer')],
+    ['Valid till', pickVal('validTill')],
+    ['Department', doc.department],
+    ['Retention', doc.retention],
+    ['Version', `v${doc.version}`],
+  ].filter(([, v]) => !blank(v))
+
   const saveTags = async (nextTags) => {
     setBusy(true)
     try { await api.updateDocument(doc.id, { tags: nextTags, note: 'Edited tags' }); await reload() }
@@ -187,13 +231,27 @@ export default function DocumentView() {
   const removeTag = (i) => saveTags(tags.filter((_, j) => j !== i))
 
   const rollback = async (v) => { setBusy(true); try { await api.rollback(doc.id, v); await reload() } finally { setBusy(false) } }
-  const reprocess = async () => { setBusy(true); try { await api.reprocess(doc.id); await reload() } finally { setBusy(false) } }
+  const reprocess = async () => {
+    setBusy(true)
+    try {
+      const { document: d } = await api.reprocess(doc.id)
+      await reload()
+      setToast({ tone: 'success', msg: `Reprocessed — ${d?.type || 'classified'} · ${Math.round(((d?.documentConfidence ?? d?.confidence) || 0) * 100)}% confidence` })
+    } catch (e) {
+      setToast({ tone: 'error', msg: e.message || 'Reprocess failed' })
+    } finally { setBusy(false) }
+  }
 
   const startEdit = () => {
     setForm({
-      type: doc.type || '', vendor: doc.vendor || '', client: doc.client || '',
-      invoiceNumber: doc.invoiceNumber || '', date: doc.date || '', amount: doc.amount ?? '',
-      currency: doc.currency || 'INR', department: doc.department || '', retention: doc.retention || '',
+      type: doc.type || '',
+      vendor: pickVal('vendor', 'vendorName', 'merchant') || '',
+      client: pickVal('client') || '',
+      invoiceNumber: pickVal('invoiceNumber') || '',
+      date: pickVal('date', 'invoiceDate') || '',
+      amount: pickVal('amount', 'totalAmount') ?? '',
+      currency: doc.currency || pickVal('currency') || 'INR',
+      department: doc.department || '', retention: doc.retention || '',
     })
     setEditing(true)
   }
@@ -211,16 +269,29 @@ export default function DocumentView() {
   }
 
   const sendEsign = async () => {
+    const signer = window.prompt('Send this document for e-signature.\nEnter the signer’s email:', 'signer@client.com')
+    if (!signer) return
     setBusy(true)
     try {
-      const { envelope } = await api.createEnvelope({ doc: doc.name, provider: 'DocuSign', signer: 'signer@client.com' })
+      const { envelope } = await api.createEnvelope({ doc: doc.name, provider: 'DocuSign', signer: signer.trim() })
       await api.sendEnvelope(envelope.id)
-      await reload()
+      setToast({ tone: 'success', msg: `Sent for signature to ${signer.trim()} via DocuSign. Track it on the eSign page.` })
+    } catch (e) {
+      setToast({ tone: 'error', msg: e.message || 'eSign failed' })
     } finally { setBusy(false) }
   }
 
   return (
     <div>
+      {toast && (
+        <div className={`mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-sm ${
+          toast.tone === 'error' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+        }`}>
+          {toast.tone === 'error' ? <IconWarning className="w-4 h-4 mt-0.5 shrink-0" /> : <IconCheck className="w-4 h-4 mt-0.5 shrink-0" />}
+          <span className="flex-1">{toast.msg}</span>
+          <button onClick={() => setToast(null)} className="text-gray-400 hover:text-gray-600"><IconX className="w-4 h-4" /></button>
+        </div>
+      )}
       <div className="flex items-center flex-wrap gap-1 text-sm mb-3">
         <Link to="/browse" className="text-gray-500 hover:text-indigo-600">Browse</Link>
         <IconChevronRight className="w-3.5 h-3.5 text-gray-300" />
@@ -316,14 +387,12 @@ export default function DocumentView() {
             ) : (
               <>
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div><div className="text-[11px] text-gray-500">Type</div><div className="text-gray-900">{doc.type}</div></div>
-                  <div><div className="text-[11px] text-gray-500">Vendor</div><div className="text-gray-900">{doc.vendor}</div></div>
-                  <div><div className="text-[11px] text-gray-500">Amount</div><div className="text-gray-900">{formatAmount(doc.amount, doc.currency)}</div></div>
-                  <div><div className="text-[11px] text-gray-500">Date</div><div className="text-gray-900">{doc.date}</div></div>
-                  {doc.invoiceNumber && <div><div className="text-[11px] text-gray-500">Invoice #</div><div className="text-gray-900">{doc.invoiceNumber}</div></div>}
-                  <div><div className="text-[11px] text-gray-500">Retention</div><div className="text-gray-900">{doc.retention}</div></div>
-                  <div><div className="text-[11px] text-gray-500">Department</div><div className="text-gray-900">{doc.department || '—'}</div></div>
-                  <div><div className="text-[11px] text-gray-500">Version</div><div className="text-gray-900">v{doc.version}</div></div>
+                  {summaryFields.map(([label, value]) => (
+                    <div key={label} className={label === 'Parties' ? 'col-span-2' : ''}>
+                      <div className="text-[11px] text-gray-500">{label}</div>
+                      <div className="text-gray-900 break-words">{String(value)}</div>
+                    </div>
+                  ))}
                 </div>
                 {(doc.channel || doc.classifier || doc.manuallyVerified) && (
                   <div className="mt-3 flex flex-wrap gap-1.5">

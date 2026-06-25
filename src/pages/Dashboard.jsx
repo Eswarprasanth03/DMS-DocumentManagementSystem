@@ -68,23 +68,24 @@ function Donut({ data, size = 160, stroke = 22 }) {
 }
 
 function KpiCard({ to, label, value, hint, tone, icon }) {
-  return (
-    <Link to={to} className="group block">
-      <Card className="p-4 h-full transition hover:shadow-md hover:-translate-y-0.5 hover:border-indigo-200">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500">{label}</div>
-            <div className="mt-1 text-2xl font-bold text-gray-900">{value}</div>
-            {hint && <div className="mt-1 text-xs text-gray-500 truncate">{hint}</div>}
-          </div>
-          <div className={`p-2 rounded-lg ${statusStyles[tone]}`}>{icon}</div>
+  const inner = (
+    <Card className={`p-4 h-full transition ${to ? 'hover:shadow-md hover:-translate-y-0.5 hover:border-indigo-200' : ''}`}>
+      <div className="flex items-start justify-between">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500">{label}</div>
+          <div className="mt-1 text-2xl font-bold text-gray-900">{value}</div>
+          {hint && <div className="mt-1 text-xs text-gray-500 truncate">{hint}</div>}
         </div>
+        <div className={`p-2 rounded-lg ${statusStyles[tone]}`}>{icon}</div>
+      </div>
+      {to && (
         <div className="mt-2 flex items-center gap-1 text-[11px] font-medium text-indigo-600 opacity-0 group-hover:opacity-100 transition">
           View details <IconChevronRight className="w-3 h-3" />
         </div>
-      </Card>
-    </Link>
+      )}
+    </Card>
   )
+  return to ? <Link to={to} className="group block">{inner}</Link> : <div className="block">{inner}</div>
 }
 
 function BarRow({ label, value, suffix, max, color, to }) {
@@ -104,12 +105,18 @@ function BarRow({ label, value, suffix, max, color, to }) {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, can } = useAuth()
   const [updatedAt, setUpdatedAt] = useState(() => new Date().toISOString())
 
   const { data, loading, error, reload } = useApi(async () => {
+    // Trips & retention are permission-gated — Viewers can't access them, so we
+    // only request them when allowed (and tolerate failures) to avoid a 403
+    // breaking the whole dashboard.
     const [stats, docs, trips, retention] = await Promise.all([
-      api.stats(), api.documents(), api.trips(), api.retention(),
+      api.stats(),
+      api.documents(),
+      can('trips') ? api.trips().catch(() => ({ trips: [] })) : Promise.resolve({ trips: [] }),
+      can('retention') ? api.retention().catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
     ])
     setUpdatedAt(new Date().toISOString())
     return { stats, docs: docs.documents, trips: trips.trips, retention: retention.items }
@@ -189,10 +196,10 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <KpiCard to="/browse" label="Documents" value={String(stats.documents)} hint="in library" tone="brand" icon={<IconFile className="w-5 h-5" />} />
         <KpiCard to="/browse" label="Total value" value={formatAmount(totalValue)} hint="sum of amounts" tone="success" icon={<IconBolt className="w-5 h-5" />} />
-        <KpiCard to="/review" label="Needs review" value={String(stats.needsReview)} hint="awaiting action" tone="warning" icon={<IconWarning className="w-5 h-5" />} />
-        <KpiCard to="/duplicates" label="Duplicates" value={String(stats.duplicates)} hint="flagged" tone="error" icon={<IconCopy className="w-5 h-5" />} />
-        <KpiCard to="/retention" label="Expiring" value={String(stats.expiring + stats.expired)} hint="retention escalation" tone="warning" icon={<IconClock className="w-5 h-5" />} />
-        <KpiCard to="/trips" label="Trips" value={String(stats.trips)} hint="auto-detected" tone="info" icon={<IconMap className="w-5 h-5" />} />
+        <KpiCard to={can('review') ? '/review' : undefined} label="Needs review" value={String(stats.needsReview)} hint="awaiting action" tone="warning" icon={<IconWarning className="w-5 h-5" />} />
+        <KpiCard to={can('upload') ? '/duplicates' : undefined} label="Duplicates" value={String(stats.duplicates)} hint="flagged" tone="error" icon={<IconCopy className="w-5 h-5" />} />
+        <KpiCard to={can('retention') ? '/retention' : undefined} label="Expiring" value={String(stats.expiring + stats.expired)} hint="retention escalation" tone="warning" icon={<IconClock className="w-5 h-5" />} />
+        <KpiCard to={can('trips') ? '/trips' : undefined} label="Trips" value={String(stats.trips)} hint="auto-detected" tone="info" icon={<IconMap className="w-5 h-5" />} />
       </div>
 
       {/* Row: status donut · document types · attention */}

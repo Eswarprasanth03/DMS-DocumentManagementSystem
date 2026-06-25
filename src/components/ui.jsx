@@ -48,16 +48,18 @@ export function Button({
   ...rest
 }) {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed'
+    'inline-flex items-center justify-center gap-2 font-medium rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed'
   const sizes = {
-    sm: 'text-xs px-2.5 py-1.5',
-    md: 'text-sm px-3.5 py-2',
-    lg: 'text-sm px-5 py-2.5',
+    sm: 'text-xs px-3 py-1.5',
+    md: 'text-sm px-4 py-2',
+    lg: 'text-sm px-6 py-2.5',
   }
   const variants = {
-    primary: 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-sm',
+    // Commit-style solid pill — black in light mode, white in dark mode.
+    primary: 'bg-gray-900 text-white hover:bg-black shadow-sm dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200',
+    // Indigo → blue accent gradient.
     gradient:
-      'bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white hover:from-fuchsia-600 hover:to-purple-700 shadow-sm',
+      'bg-gradient-to-r from-indigo-500 to-blue-500 text-white hover:opacity-90 shadow-sm',
     secondary:
       'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 shadow-sm',
     ghost: 'text-gray-600 hover:bg-gray-100',

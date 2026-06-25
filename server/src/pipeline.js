@@ -112,7 +112,9 @@ export function classify({ filename, text = '', hintType, hintVendor, hintAmount
   let best = null
   let bestScore = 0
   for (const rule of TYPE_RULES) {
-    const hits = rule.keywords.filter((k) => tokens.has(k) || haystack.includes(k)).length
+    // Single-word keywords must match a whole token (so "ola" won't match inside
+    // "Motorola"); multi-word keywords match as a phrase.
+    const hits = rule.keywords.filter((k) => (k.includes(' ') ? haystack.includes(k) : tokens.has(k))).length
     const score = hits / rule.keywords.length
     if (hits > 0 && score >= bestScore) {
       bestScore = score
@@ -152,14 +154,22 @@ export function classify({ filename, text = '', hintType, hintVendor, hintAmount
   }
 }
 
+// Whole-word match so short keys (e.g. "ola") never match inside unrelated
+// words like "Motorola", "Coca-Cola" or "chocolate". Multi-word keys still
+// match as a phrase.
+function hasKeyword(text, tokenSet, k) {
+  return k.includes(' ') ? text.includes(k) : tokenSet.has(k)
+}
 function detectVendor(text) {
-  for (const [k, v] of Object.entries(VENDOR_HINTS)) if (text.includes(k)) return v
+  const tokens = new Set(tokenize(text))
+  for (const [k, v] of Object.entries(VENDOR_HINTS)) if (hasKeyword(text, tokens, k)) return v
   return null
 }
 function detectClient(text) {
-  if (text.includes('globex')) return 'Globex Ltd'
-  if (text.includes('initech')) return 'Initech'
-  if (text.includes('acme')) return 'Acme Corp'
+  const tokens = new Set(tokenize(text))
+  if (tokens.has('globex')) return 'Globex Ltd'
+  if (tokens.has('initech')) return 'Initech'
+  if (tokens.has('acme')) return 'Acme Corp'
   return null
 }
 function detectAmount(text) {

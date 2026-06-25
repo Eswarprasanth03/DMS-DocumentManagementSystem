@@ -16,6 +16,38 @@ body,
   height: 100%;
 }
 
+/* "Commit"-inspired theme ------------------------------------------------- */
+/* App background: clean neutral in light; deep navy + faint indigo glow +
+   subtle grid in dark. */
+.fs-app-bg { background: #f4f5f7; }
+.dark .fs-app-bg {
+  background-color: #090c14;
+  background-image:
+    radial-gradient(900px 420px at 50% -8%, rgba(99, 102, 241, 0.18), transparent 62%),
+    linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: auto, 40px 40px, 40px 40px;
+}
+
+/* Dark hero / brand panel (login) — deep navy with indigo + blue glows. */
+.fs-commit-hero {
+  background-color: #090c14;
+  background-image:
+    radial-gradient(640px 420px at 28% 0%, rgba(99, 102, 241, 0.30), transparent 60%),
+    radial-gradient(520px 420px at 100% 100%, rgba(59, 130, 246, 0.20), transparent 60%),
+    linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: auto, auto, 38px 38px, 38px 38px;
+}
+
+/* Indigo→blue gradient text accent. */
+.fs-gradient-text {
+  background: linear-gradient(120deg, #818cf8, #38bdf8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
@@ -70,13 +102,13 @@ body {
    Only neutral surfaces/text/borders are remapped; colored accent chips
    (badges, status pills) keep their meaning.
    ========================================================================= */
-.dark body { background-color: #0b1120; color: #e5e7eb; }
+.dark body { background-color: #090c14; color: #e5e7eb; }
 
-/* Surfaces */
-.dark .bg-white { background-color: #111827; }
-.dark .bg-gray-50 { background-color: #0b1120; }
-.dark .bg-gray-50\/60 { background-color: rgba(15, 23, 42, 0.6); }
-.dark .bg-gray-100 { background-color: #1f2937; }
+/* Surfaces (Commit deep-navy palette) */
+.dark .bg-white { background-color: #0f1320; }
+.dark .bg-gray-50 { background-color: #0b0f1a; }
+.dark .bg-gray-50\/60 { background-color: rgba(13, 17, 28, 0.6); }
+.dark .bg-gray-100 { background-color: #1a2030; }
 
 /* Selection / subtle accent surfaces */
 .dark .bg-indigo-50\/70 { background-color: rgba(99, 102, 241, 0.14); }
@@ -92,20 +124,20 @@ body {
 .dark .text-slate-500 { color: #94a3b8; }
 .dark .text-slate-700 { color: #cbd5e1; }
 
-/* Borders + dividers */
-.dark .border-gray-100 { border-color: #1f2937; }
-.dark .border-gray-200 { border-color: #334155; }
+/* Borders + dividers (subtle navy) */
+.dark .border-gray-100 { border-color: #1b2230; }
+.dark .border-gray-200 { border-color: #232c3d; }
 .dark .border-indigo-100 { border-color: rgba(99, 102, 241, 0.25); }
-.dark .divide-gray-50 > * + * { border-color: #161e2e; }
-.dark .divide-gray-100 > * + * { border-color: #1f2937; }
+.dark .divide-gray-50 > * + * { border-color: #141a26; }
+.dark .divide-gray-100 > * + * { border-color: #1b2230; }
 
 /* Hover + focus states */
-.dark .hover\:bg-gray-50:hover { background-color: #1e293b; }
-.dark .hover\:bg-gray-100:hover { background-color: #243043; }
-.dark .focus\:bg-white:focus { background-color: #111827; }
+.dark .hover\:bg-gray-50:hover { background-color: #161c2a; }
+.dark .hover\:bg-gray-100:hover { background-color: #1d2434; }
+.dark .focus\:bg-white:focus { background-color: #0f1320; }
 
 /* Rings (e.g. white ring around the notification dot) */
-.dark .ring-white { --tw-ring-color: #111827; }
+.dark .ring-white { --tw-ring-color: #0f1320; }
 
 /* Inline document preview (spreadsheets / Word) */
 .dark .fs-doc-preview td,

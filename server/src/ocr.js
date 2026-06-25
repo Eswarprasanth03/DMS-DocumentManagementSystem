@@ -102,6 +102,7 @@ async function visionOcr(imageBuffer, mime = 'image/png') {
 async function getWorker() {
   if (tesseractWorker) return tesseractWorker
   const { createWorker } = await import('tesseract.js')
+  console.log(config)
   tesseractWorker = await createWorker(config.ocrLanguage)
   return tesseractWorker
 }

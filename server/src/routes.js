@@ -205,13 +205,16 @@ router.post('/documents/:id/reprocess', authRequired, requirePerm('upload'), asy
   try {
     const doc = store.findById('documents', req.params.id)
     if (!doc) return res.status(404).json({ error: 'Document not found' })
-    if (!doc.storageKey) return res.status(409).json({ error: 'No stored file to reprocess' })
-    const buffer = await storage.getFile(doc.storageKey)
-    if (!buffer) return res.status(404).json({ error: 'File missing on storage' })
     const { ocrExtract } = await import('./ocr.js')
     const { classifyDoc } = await import('./classifier.js')
-    const { text: ocrText } = await ocrExtract(buffer, doc.originalName || doc.name)
-    const c = await classifyDoc({ filename: doc.originalName || doc.name, text: `${doc.name} ${ocrText}` })
+    // Re-run OCR from the stored file when available; otherwise fall back to the
+    // previously-indexed text so reprocess still works (e.g. seed/text docs).
+    let ocrText = doc.searchText || ''
+    if (doc.storageKey) {
+      const buffer = await storage.getFile(doc.storageKey)
+      if (buffer) ocrText = (await ocrExtract(buffer, doc.originalName || doc.name)).text || ocrText
+    }
+    const c = await classifyDoc({ filename: doc.originalName || doc.name, text: `${doc.name} ${ocrText}`.trim() })
     const patch = {
       type: c.type, category: c.category, retention: c.retention,
       vendor: c.vendor, amount: c.amount, date: c.date, client: c.client, gstin: c.gstin,

@@ -10,9 +10,10 @@
     "preview": "vite preview",
     "setup": "npm install && npm --prefix server install",
     "server": "npm --prefix server start",
+    "server:dev": "npm --prefix server run dev",
     "server:seed": "npm --prefix server run seed",
     "samples": "node tools/make-sample-pdfs.mjs",
-    "dev:all": "concurrently -n web,api -c magenta,green \"npm run dev\" \"npm run server\""
+    "dev:all": "concurrently -n web,api -c magenta,green \"npm run dev\" \"npm run server:dev\""
   },
   "dependencies": {
     "mammoth": "^1.12.0",

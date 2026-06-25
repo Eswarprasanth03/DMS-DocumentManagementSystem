@@ -43,12 +43,10 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex">
-      {/* Brand panel */}
-      <div className="hidden lg:flex w-1/2 bg-slate-900 text-white flex-col justify-between p-12 relative overflow-hidden">
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 blur-3xl" />
-        <div className="absolute -bottom-32 -left-10 w-96 h-96 rounded-full bg-gradient-to-br from-fuchsia-500/20 to-indigo-500/10 blur-3xl" />
+      {/* Brand panel — Commit dark hero */}
+      <div className="hidden lg:flex w-1/2 fs-commit-hero text-white flex-col justify-between p-12 relative overflow-hidden">
         <div className="relative flex items-center gap-3">
-          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 shadow-lg shadow-indigo-500/40">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 shadow-lg shadow-indigo-500/30">
             <IconBolt className="w-6 h-6" />
           </div>
           <div>
@@ -58,21 +56,21 @@ export default function Login() {
         </div>
 
         <div className="relative">
-          <h1 className="text-3xl font-bold leading-tight">
-            Zero-effort document management.
+          <h1 className="text-5xl font-bold leading-[1.05] tracking-tight">
+            Document management,<br /><span className="fs-gradient-text">on autopilot.</span>
           </h1>
-          <p className="mt-3 text-slate-300 max-w-md">
+          <p className="mt-4 text-slate-400 max-w-md text-lg">
             Capture, classify, organise, secure, search, retain, and audit every
             document automatically — with no manual filing.
           </p>
           <div className="mt-8 space-y-4">
             {HIGHLIGHTS.map((h) => (
               <div key={h.title} className="flex items-start gap-3">
-                <div className="p-2 rounded-lg bg-white/10">
+                <div className="p-2 rounded-lg bg-white/5 ring-1 ring-white/10">
                   <h.icon className="w-5 h-5 text-indigo-300" />
                 </div>
                 <div>
-                  <div className="text-sm font-medium">{h.title}</div>
+                  <div className="text-sm font-semibold text-white">{h.title}</div>
                   <div className="text-xs text-slate-400">{h.text}</div>
                 </div>
               </div>
@@ -86,16 +84,16 @@ export default function Login() {
       </div>
 
       {/* Form panel */}
-      <div className="flex-1 flex items-center justify-center p-6 bg-gray-50">
+      <div className="flex-1 flex items-center justify-center p-6 bg-white">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 text-white">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white">
               <IconBolt className="w-5 h-5" />
             </div>
             <span className="font-semibold text-gray-900">FlowSphere DMS</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Welcome back</h2>
           <p className="mt-1 text-sm text-gray-500">Sign in to your DMS workspace.</p>
 
           <form onSubmit={submit} className="mt-8 space-y-4">

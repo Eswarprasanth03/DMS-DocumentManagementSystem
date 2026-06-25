@@ -16,7 +16,7 @@ function applyTheme(theme) {
 }
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem(STORAGE_KEY) || 'system')
+  const [theme, setTheme] = useState(() => localStorage.getItem(STORAGE_KEY) || 'dark')
 
   useEffect(() => {
     applyTheme(theme)
@@ -49,6 +49,6 @@ export function useTheme() {
 // Apply the saved theme as early as possible to avoid a flash of the wrong theme.
 export function initThemeEarly() {
   try {
-    applyTheme(localStorage.getItem(STORAGE_KEY) || 'system')
+    applyTheme(localStorage.getItem(STORAGE_KEY) || 'dark')
   } catch { /* ignore */ }
 }
