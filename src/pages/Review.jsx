@@ -5,7 +5,7 @@ import { confidenceTone } from '../lib/theme.js'
 import { IconFile, IconCheck, IconX, IconHistory, IconWarning, IconBrain, IconDocCheck } from '../components/icons.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { api } from '../lib/api.js'
-import { formatAmount } from '../lib/format.js'
+import { formatAmount, relTime } from '../lib/format.js'
 
 const DOC_TYPES = [
   'Invoice', 'GST Invoice', 'Receipt', 'Travel Bill', 'Hotel Invoice', 'Fuel Bill',
@@ -219,11 +219,21 @@ function CorrectionForm({ doc, onDone }) {
 export default function Review() {
   const { data, loading, error, reload } = useApi(() => api.reviewQueue(), [])
   const [selId, setSelId] = useState(null)
+  const [sort, setSort] = useState('latest')
 
   if (loading) return <Loading label="Loading review queue…" />
   if (error) return <ErrorState error={error} onRetry={reload} />
 
-  const items = data.documents || []
+  const raw = data.documents || []
+  const conf = (d) => d.documentConfidence ?? d.confidence ?? 0
+  const time = (d) => new Date(d.createdAt || d.updatedAt || 0).getTime()
+  const items = [...raw].sort((a, b) => {
+    if (sort === 'latest') return time(b) - time(a)
+    if (sort === 'oldest') return time(a) - time(b)
+    if (sort === 'confidence') return conf(a) - conf(b)
+    if (sort === 'type') return String(a.type || '').localeCompare(String(b.type || '')) || String(a.name || '').localeCompare(String(b.name || ''))
+    return String(a.name || '').localeCompare(String(b.name || ''))
+  })
   const selected = items.find((d) => d.id === selId) || items[0] || null
   const afterAction = () => { setSelId(null); reload() }
 
@@ -238,7 +248,16 @@ export default function Review() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Queue rail */}
           <Card className="p-2 lg:col-span-3 h-fit">
-            <div className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase text-slate-500">Needs review ({items.length})</div>
+            <div className="px-2 py-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold tracking-wider uppercase text-slate-500">Needs review ({items.length})</span>
+              <Select value={sort} onChange={(e) => setSort(e.target.value)} className="py-1 text-[11px]" title="Sort">
+                <option value="latest">Latest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="name">Name A–Z</option>
+                <option value="confidence">Lowest confidence</option>
+                <option value="type">Type</option>
+              </Select>
+            </div>
             <ul className="space-y-1 max-h-[600px] overflow-y-auto">
               {items.map((d) => {
                 const active = selected && d.id === selected.id
@@ -249,7 +268,7 @@ export default function Review() {
                         <IconFile className={`w-4 h-4 shrink-0 ${active ? 'text-indigo-500' : 'text-gray-400'}`} />
                         <span className={`text-xs truncate ${active ? 'text-indigo-700 font-medium' : 'text-gray-700'}`}>{d.name}</span>
                       </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">{d.type} · {Math.round((d.documentConfidence ?? d.confidence ?? 0) * 100)}%</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">{d.type} · {Math.round((d.documentConfidence ?? d.confidence ?? 0) * 100)}%{(d.createdAt || d.updatedAt) ? ` · ${relTime(d.createdAt || d.updatedAt)}` : ''}</div>
                     </button>
                   </li>
                 )

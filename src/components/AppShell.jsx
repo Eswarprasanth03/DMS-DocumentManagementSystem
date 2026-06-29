@@ -43,7 +43,7 @@ const NAV = [
   {
     section: 'Intelligence',
     items: [
-      { to: '/trips', label: 'Trip Detection', icon: IconMap, perm: 'trips' },
+      // { to: '/trips', label: 'Trip Detection', icon: IconMap, perm: 'trips' },
       { to: '/review', label: 'Doc Review', icon: IconDocCheck, perm: 'upload' },
       { to: '/duplicates', label: 'Duplicates', icon: IconCopy, perm: 'upload' },
       { to: '/trash', label: 'Trash', icon: IconTrash, perm: 'upload' },

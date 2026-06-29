@@ -159,7 +159,7 @@ export default function Dashboard() {
   const { statusData, typeData, topVendors, totalValue } = derived
   const expiring = retention.filter((r) => r.status === 'Expiring' || r.status === 'Expired')
   const needsReview = docs.filter((d) => d.status === 'Needs Review' && !d.tombstone)
-  const recent = [...docs].filter((d) => !d.tombstone).slice(-6).reverse()
+  const recent = [...docs].filter((d) => !d.tombstone).slice(-25).reverse()
   const typeMax = typeData[0]?.value || 1
   const vendorMax = topVendors[0]?.value || 1
 
@@ -195,11 +195,11 @@ export default function Dashboard() {
       {/* KPI cards — clickable */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <KpiCard to="/browse" label="Documents" value={String(stats.documents)} hint="in library" tone="brand" icon={<IconFile className="w-5 h-5" />} />
-        <KpiCard to="/browse" label="Total value" value={formatAmount(totalValue)} hint="sum of amounts" tone="success" icon={<IconBolt className="w-5 h-5" />} />
+        {/* <KpiCard to="/browse" label="Total value" value={formatAmount(totalValue)} hint="sum of amounts" tone="success" icon={<IconBolt className="w-5 h-5" />} /> */}
         <KpiCard to={can('review') ? '/review' : undefined} label="Needs review" value={String(stats.needsReview)} hint="awaiting action" tone="warning" icon={<IconWarning className="w-5 h-5" />} />
         <KpiCard to={can('upload') ? '/duplicates' : undefined} label="Duplicates" value={String(stats.duplicates)} hint="flagged" tone="error" icon={<IconCopy className="w-5 h-5" />} />
         <KpiCard to={can('retention') ? '/retention' : undefined} label="Expiring" value={String(stats.expiring + stats.expired)} hint="retention escalation" tone="warning" icon={<IconClock className="w-5 h-5" />} />
-        <KpiCard to={can('trips') ? '/trips' : undefined} label="Trips" value={String(stats.trips)} hint="auto-detected" tone="info" icon={<IconMap className="w-5 h-5" />} />
+        {/* <KpiCard to={can('trips') ? '/trips' : undefined} label="Trips" value={String(stats.trips)} hint="auto-detected" tone="info" icon={<IconMap className="w-5 h-5" />} /> */}
       </div>
 
       {/* Row: status donut · document types · attention */}
@@ -291,9 +291,9 @@ export default function Dashboard() {
           {recent.length === 0 ? (
             <div className="text-xs text-gray-500 py-6 text-center">No documents yet.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto max-h-80">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 bg-white z-10">
                   <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-gray-100">
                     <th className="py-2 font-semibold">Name</th>
                     <th className="py-2 font-semibold">Type</th>

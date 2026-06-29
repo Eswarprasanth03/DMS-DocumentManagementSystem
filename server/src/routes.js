@@ -347,6 +347,13 @@ router.post('/documents/:id/merge', authRequired, requirePerm('upload'), (req, r
   for (const k of ['vendor', 'client', 'invoiceNumber', 'date', 'amount', 'currency', 'gstin', 'department']) {
     if (isEmpty(target[k]) && !isEmpty(source[k])) { before[k] = target[k] ?? null; patch[k] = source[k] }
   }
+  // The kept document leaves the duplicates queue — clear its duplicate flags
+  // (matters when the user chooses to keep the doc that was flagged duplicate).
+  if (target.duplicate || target.duplicateOf || target.status === 'Duplicate') {
+    patch.duplicate = false
+    patch.duplicateOf = null
+    if (target.status === 'Duplicate') patch.status = 'Filed'
+  }
   let updated = target
   if (Object.keys(patch).length) {
     const newVersion = (target.version || 1) + 1

@@ -17,10 +17,19 @@ const RECEIPT_TYPES = ['Receipt', 'Travel Bill', 'Fuel Bill']
 const CONTRACT_TYPES = ['Contract', 'MSA', 'NDA']
 const HR_TYPES = ['Offer Letter', 'Experience Letter', 'HR Document']
 
+// Ordered list of LLM providers to try. NVIDIA has top priority; Gemini is the
+// fallback if NVIDIA fails / times out; deterministic is the last resort.
+// 'none' disables LLMs entirely.
+export function providerChain() {
+  if (config.llmProvider === 'none') return []
+  const chain = []
+  if (config.nvidiaApiKey) chain.push('nvidia')
+  if (config.geminiApiKey) chain.push('gemini')
+  return chain
+}
+
 export function classifierEngine() {
-  if (config.llmProvider === 'gemini' && config.geminiApiKey) return 'gemini'
-  if (config.llmProvider === 'nvidia' && config.nvidiaApiKey) return 'nvidia'
-  return 'deterministic'
+  return providerChain()[0] || 'deterministic'
 }
 
 const PLACEHOLDERS = new Set(['', 'null', 'n/a', 'na', 'none', 'unknown', '-', '--', 'undefined'])
@@ -169,42 +178,44 @@ function assemble(type, fields, typeConfidence, base, clientVal, engine) {
   }
 }
 
+// Turn a raw LLM response into the assembled, validated result.
+function buildFromLlm(llm, base, engine) {
+  const type = TYPE_NAMES.includes(llm.type) ? llm.type : base.type
+  let fields = normalizeFields(llm.fields, engine)
+  if (Object.keys(fields).length === 0) fields = fieldsFromBase(type, base) // LLM gave no fields
+  const typeConfidence = Number(llm.typeConfidence) || base.confidence
+  const result = assemble(type, fields, typeConfidence, base, llm.client, engine)
+  // Business-document gate: quarantine anything that isn't a real company doc.
+  if (llm.isBusinessDocument === false) {
+    result.nonBusiness = true
+    result.status = 'Needs Review'
+    result.requiresReview = true
+    result.documentConfidence = Math.min(result.documentConfidence ?? 0.3, 0.25)
+    const why = cleanVal(llm.rejectReason) || 'Not a recognized business document'
+    result.reviewReason = `⚠ Not a business document: ${why}`
+  }
+  return result
+}
+
 export async function classifyDoc(input) {
   const base = deterministicClassify(input)
-  const engine = classifierEngine()
+  const chain = providerChain()
+  const text = input.text || input.filename
 
-  if (engine === 'deterministic') {
-    const fields = fieldsFromBase(base.type, base)
-    return assemble(base.type, fields, base.confidence, base, base.client, 'deterministic')
+  // Try providers in priority order (NVIDIA → Gemini), failing over on
+  // timeout/error/empty. Deterministic is the final fallback.
+  for (const engine of chain) {
+    try {
+      const llm = engine === 'gemini' ? await classifyWithGemini(text) : await classifyWithNvidia(text)
+      if (llm) return buildFromLlm(llm, base, engine)
+      console.warn(`[classifier] ${engine} returned no usable result — trying next provider`)
+    } catch (err) {
+      console.warn(`[classifier] ${engine} failed (${err.message}) — trying next provider`)
+    }
   }
 
-  try {
-    const text = input.text || input.filename
-    const llm = engine === 'gemini' ? await classifyWithGemini(text) : await classifyWithNvidia(text)
-    if (!llm) {
-      const fields = fieldsFromBase(base.type, base)
-      return assemble(base.type, fields, base.confidence, base, base.client, 'deterministic')
-    }
-    const type = TYPE_NAMES.includes(llm.type) ? llm.type : base.type
-    let fields = normalizeFields(llm.fields, engine)
-    if (Object.keys(fields).length === 0) fields = fieldsFromBase(type, base) // LLM gave no fields
-    const typeConfidence = Number(llm.typeConfidence) || base.confidence
-    const result = assemble(type, fields, typeConfidence, base, llm.client, engine)
-    // Business-document gate: quarantine anything that isn't a real company doc.
-    if (llm.isBusinessDocument === false) {
-      result.nonBusiness = true
-      result.status = 'Needs Review'
-      result.requiresReview = true
-      result.documentConfidence = Math.min(result.documentConfidence ?? 0.3, 0.25)
-      const why = cleanVal(llm.rejectReason) || 'Not a recognized business document'
-      result.reviewReason = `⚠ Not a business document: ${why}`
-    }
-    return result
-  } catch (err) {
-    console.warn(`[classifier] ${engine} failed, using deterministic:`, err.message)
-    const fields = fieldsFromBase(base.type, base)
-    return assemble(base.type, fields, base.confidence, base, base.client, 'deterministic')
-  }
+  const fields = fieldsFromBase(base.type, base)
+  return assemble(base.type, fields, base.confidence, base, base.client, 'deterministic')
 }
 
 async function classifyWithGemini(text) {
@@ -231,10 +242,13 @@ async function classifyWithGemini(text) {
 
 // NVIDIA NIM — OpenAI-compatible. The nemotron reasoning model needs
 // enable_thinking=true to emit its final answer in `content`.
-async function classifyWithNvidia(text) {
+// Retries transient failures (timeouts, 429, 5xx) with backoff so a single
+// hiccup doesn't drop the document to the deterministic fallback. Fails fast on
+// auth/not-found (401/403/404) since retrying those is pointless.
+async function nvidiaCallOnce(text, timeoutMs) {
   const url = `${config.nvidiaBaseUrl.replace(/\/$/, '')}/chat/completions`
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 45000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -243,14 +257,39 @@ async function classifyWithNvidia(text) {
         model: config.nvidiaModel,
         messages: [{ role: 'user', content: buildPrompt(text) }],
         temperature: 0.2, top_p: 0.95, max_tokens: 4096, stream: false,
-        chat_template_kwargs: { enable_thinking: true }, reasoning_budget: 2048,
+        chat_template_kwargs: { enable_thinking: true }, reasoning_budget: 1536,
       }),
       signal: controller.signal,
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`)
+      err.status = res.status
+      err.fatal = res.status === 401 || res.status === 403 || res.status === 404
+      throw err
+    }
     const data = await res.json()
     return parseJsonLoose(data?.choices?.[0]?.message?.content)
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function classifyWithNvidia(text) {
+  // Kept tight (2 attempts × 30s) so a slow/unresponsive NVIDIA fails over to
+  // Gemini quickly instead of blocking the whole pipeline.
+  const attempts = 2
+  let lastErr = null
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const parsed = await nvidiaCallOnce(text, 30000)
+      if (parsed) return parsed
+      lastErr = new Error('empty/unparseable response')
+    } catch (err) {
+      lastErr = err
+      if (err.fatal) { console.warn(`[classifier] nvidia fatal (${err.status}) — not retrying`); break }
+      console.warn(`[classifier] nvidia attempt ${i}/${attempts} failed: ${err.message}`)
+    }
+    if (i < attempts) await new Promise((r) => setTimeout(r, 500))
+  }
+  throw lastErr || new Error('nvidia failed')
 }

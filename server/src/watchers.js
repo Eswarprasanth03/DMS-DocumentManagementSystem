@@ -139,10 +139,10 @@ export function channelStatus() {
       : `${imap.user} · every ${imap.pollSeconds}s`
   return {
     manual: { type: 'Manual upload', status: 'active', detail: 'Drag & drop / file picker' },
-    api: { type: 'API push', status: 'active', detail: 'POST /api/documents/upload' },
+    // api: { type: 'API push', status: 'active', detail: 'POST /api/documents/upload' },
     hotfolder: { type: 'Hot-folder watcher', status: 'active', detail: rel(config.dropDir), processed: stats.hotfolder.processed, lastFile: stats.hotfolder.lastFile },
-    scanner: { type: 'Scanner (scan-to-folder)', status: 'active', detail: rel(config.scannerDir), processed: stats.scanner.processed, lastFile: stats.scanner.lastFile },
-    email: { type: 'Email drop (.eml)', status: 'active', detail: `${rel(config.maildropDir)} (.eml)`, processed: stats.email.processed, lastFile: stats.email.lastFile },
+    // scanner: { type: 'Scanner (scan-to-folder)', status: 'active', detail: rel(config.scannerDir), processed: stats.scanner.processed, lastFile: stats.scanner.lastFile },
+    // email: { type: 'Email drop (.eml)', status: 'active', detail: `${rel(config.maildropDir)} (.eml)`, processed: stats.email.processed, lastFile: stats.email.lastFile },
     imap: {
       type: 'Email inbox (IMAP)',
       status: imap.enabled ? (imap.connected ? 'active' : 'connecting') : 'inactive',
